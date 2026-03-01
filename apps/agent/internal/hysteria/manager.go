@@ -61,3 +61,55 @@ func (m *Manager) ReadClients() ([]ClientConfig, error) {
 
 	return clients, nil
 }
+
+// AddClient adds or updates a client in the Hysteria2 config (auth.userpass) and writes the file back.
+func (m *Manager) AddClient(id, password string) error {
+	if id == "" || password == "" {
+		return fmt.Errorf("id and password are required")
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	data, err := os.ReadFile(m.configPath)
+	if err != nil {
+		return fmt.Errorf("failed to read config: %w", err)
+	}
+
+	var raw map[interface{}]interface{}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("failed to parse config: %w", err)
+	}
+
+	auth, _ := raw["auth"].(map[interface{}]interface{})
+	if auth == nil {
+		auth = map[interface{}]interface{}{
+			"type": "userpass",
+			"userpass": map[interface{}]interface{}{},
+		}
+		raw["auth"] = auth
+	}
+
+	if auth["type"] == nil {
+		auth["type"] = "userpass"
+	}
+
+	userpass, _ := auth["userpass"].(map[interface{}]interface{})
+	if userpass == nil {
+		userpass = make(map[interface{}]interface{})
+		auth["userpass"] = userpass
+	}
+
+	userpass[id] = password
+
+	out, err := yaml.Marshal(raw)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	if err := os.WriteFile(m.configPath, out, 0644); err != nil {
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+
+	return nil
+}

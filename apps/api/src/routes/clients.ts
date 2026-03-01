@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
-import { getDb, clients } from "@hy2-panel/db";
+import { getDb, clients, servers } from "@hy2-panel/db";
 import { authMiddleware, type JwtPayload } from "../middleware/auth";
 import { ApiError } from "../middleware/error-handler";
 import type { ApiResponse } from "@hy2-panel/shared";
@@ -33,7 +33,7 @@ clientsRoutes.use("*", authMiddleware);
 
 clientsRoutes.get("/", async (c) => {
   const db = await getDb();
-  const allClients = await db.query.clients.findMany({ with: { server: true } });
+  const allClients = await db.query.clients.findMany();
 
   return c.json<ApiResponse>({
     success: true,
@@ -61,11 +61,38 @@ clientsRoutes.post("/", zValidator("json", createClientSchema), async (c) => {
     expiresAt: data.expiresAt ? new Date(data.expiresAt) : null,
   });
 
+  // Push client to Hysteria2 config on the server's agent
+  let agentMessage: string | undefined;
+  const server = await db.query.servers.findFirst({
+    where: eq(servers.id, data.serverId),
+  });
+  if (server) {
+    let agentUrl = server.agentUrl;
+    if (!agentUrl.startsWith("http://") && !agentUrl.startsWith("https://")) {
+      agentUrl = `http://${agentUrl}`;
+    }
+    try {
+      const res = await fetch(`${agentUrl.replace(/\/$/, "")}/clients`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${server.agentToken}`,
+        },
+        body: JSON.stringify({ id: data.name, password }),
+      });
+      if (!res.ok) {
+        agentMessage = `Client saved in panel but could not add to server config (${res.status}).`;
+      }
+    } catch (err) {
+      agentMessage = "Client saved in panel but could not reach agent to update server config.";
+    }
+  }
+
   return c.json<ApiResponse>(
     {
       success: true,
       data: { id, password },
-      message: "Client created",
+      message: agentMessage || "Client created",
     },
     201
   );

@@ -52,6 +52,42 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]interface{}{"clients": clients})
 	}))
 
+	// Create client in config (add to auth.userpass)
+	mux.HandleFunc("POST /clients", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Content-Type") != "application/json" {
+			http.Error(w, "Content-Type must be application/json", http.StatusBadRequest)
+			return
+		}
+
+		var body struct {
+			ID       string `json:"id"`
+			Password string `json:"password"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+
+		if body.ID == "" || body.Password == "" {
+			http.Error(w, "id and password are required", http.StatusBadRequest)
+			return
+		}
+
+		if err := hy2Manager.AddClient(body.ID, body.Password); err != nil {
+			log.Printf("AddClient failed: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		log.Printf("Added client %q to config", body.ID)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":       body.ID,
+			"password": body.Password,
+		})
+	}))
+
 	// Health check
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
