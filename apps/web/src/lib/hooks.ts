@@ -96,6 +96,17 @@ export function useTraffic(refetchInterval = 30000) {
   });
 }
 
+export function useClientTrafficHistory(clientId: string | null, periodHours = 24) {
+  return useQuery({
+    queryKey: ["clients", clientId, "traffic-history", periodHours],
+    queryFn: () =>
+      api.get<Array<{ tx: number; rx: number; sampledAt: string }>>(
+        `/api/clients/${clientId}/traffic-history?period=${periodHours}`
+      ),
+    enabled: !!clientId,
+  });
+}
+
 export function useCreateClient() {
   const queryClient = useQueryClient();
   return useMutation({

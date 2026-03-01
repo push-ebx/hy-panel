@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Server, Users, Activity, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useDashboardStats, useSyncServers, useTraffic } from "@/lib/hooks";
+import { useSettingsStore } from "@/store/settings";
 
 function formatBytes(bytes: number) {
   if (bytes === 0) return "0 B";
@@ -16,7 +17,8 @@ function formatBytes(bytes: number) {
 export default function DashboardPage() {
   const stats = useDashboardStats();
   const syncServers = useSyncServers();
-  const { data: trafficData } = useTraffic(30000);
+  const refreshTrafficMs = (useSettingsStore((s) => s.refreshTrafficSec) ?? 30) * 1000;
+  const { data: trafficData } = useTraffic(refreshTrafficMs);
 
   const totalTraffic = Object.values(trafficData?.traffic ?? {}).reduce(
     (acc, { tx, rx }) => ({ tx: acc.tx + tx, rx: acc.rx + rx }),

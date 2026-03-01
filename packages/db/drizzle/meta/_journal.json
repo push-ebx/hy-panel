@@ -15,6 +15,13 @@
       "when": 1772374685812,
       "tag": "0001_dark_sabretooth",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1772460000000,
+      "tag": "0002_traffic_snapshots",
+      "breakpoints": true
     }
   ]
 }

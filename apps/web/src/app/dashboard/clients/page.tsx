@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { Plus, Trash2, Copy, Check, Eye, EyeOff, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,25 +24,79 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useClients, useServers, useCreateClient, useDeleteClient, useUpdateClient, useOnlineClients, useTraffic } from "@/lib/hooks";
+import { useClients, useServers, useCreateClient, useDeleteClient, useUpdateClient, useTraffic, useClientTrafficHistory } from "@/lib/hooks";
+import { useSettingsStore } from "@/store/settings";
 import { api } from "@/lib/api";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+} from "recharts";
 
 export default function ClientsPage() {
   const { data: clients, isLoading } = useClients();
   const { data: servers } = useServers();
-  const { data: onlineData } = useOnlineClients(1500);
-  const { data: trafficData } = useTraffic(30000);
-  const onlineSet = new Set(onlineData?.online ?? []);
+  const refreshTrafficMs = (useSettingsStore((s) => s.refreshTrafficSec) ?? 30) * 1000;
+  const onlineTimeoutSec = useSettingsStore((s) => s.onlineTimeoutSec) ?? 90;
+  const onlineTickSec = useSettingsStore((s) => s.onlineTickSec) ?? 10;
+  const copyFeedbackSec = useSettingsStore((s) => s.copyFeedbackSec) ?? 2;
+  const trafficHistoryHours = useSettingsStore((s) => s.trafficHistoryHours) ?? 24;
+  const chartStepMin = useSettingsStore((s) => s.chartStepMin) ?? 5;
+
+  const { data: trafficData } = useTraffic(refreshTrafficMs);
   const traffic = trafficData?.traffic ?? {};
+
+  // Online = traffic delta > 0 in last fetch (Hysteria /online API unreliable)
+  const prevTrafficRef = useRef<Record<string, { tx: number; rx: number }>>({});
+  const [lastSeen, setLastSeen] = useState<Record<string, number>>({});
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    if (!trafficData?.traffic) return;
+    const current = trafficData.traffic;
+    const prev = prevTrafficRef.current;
+    const updates: Record<string, number> = {};
+    for (const [clientId, stats] of Object.entries(current)) {
+      const p = prev[clientId];
+      if (p && (stats.tx > p.tx || stats.rx > p.rx)) {
+        updates[clientId] = Date.now();
+      }
+    }
+    if (Object.keys(updates).length > 0) {
+      setLastSeen((prev) => ({ ...prev, ...updates }));
+    }
+    prevTrafficRef.current = { ...current };
+  }, [trafficData]);
+
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), onlineTickSec * 1000);
+    return () => clearInterval(id);
+  }, [onlineTickSec]);
+
+  const onlineSet = useMemo(() => {
+    const now = Date.now();
+    const cutoff = now - onlineTimeoutSec * 1000;
+    return new Set(Object.entries(lastSeen).filter(([, t]) => t >= cutoff).map(([id]) => id));
+  }, [lastSeen, tick, onlineTimeoutSec]);
   const createClient = useCreateClient();
   const deleteClient = useDeleteClient();
   const updateClient = useUpdateClient();
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [detailClientId, setDetailClientId] = useState<string | null>(null);
   const [newClient, setNewClient] = useState({ serverId: "", name: "", password: "" });
   const [createdPassword, setCreatedPassword] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [copiedClientId, setCopiedClientId] = useState<string | null>(null);
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
+
+  const detailClient = clients?.find((c) => c.id === detailClientId);
+  const { data: trafficHistory = [] } = useClientTrafficHistory(detailClientId, trafficHistoryHours);
 
   const handleCreate = async () => {
     const result = await createClient.mutateAsync({
@@ -57,7 +111,13 @@ export default function ClientsPage() {
   const handleCopyPassword = (password: string) => {
     navigator.clipboard.writeText(password);
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setTimeout(() => setCopied(false), copyFeedbackSec * 1000);
+  };
+
+  const handleCopyClientPassword = (clientId: string, password: string) => {
+    navigator.clipboard.writeText(password);
+    setCopiedClientId(clientId);
+    setTimeout(() => setCopiedClientId(null), copyFeedbackSec * 1000);
   };
 
   const handleCloseCreate = () => {
@@ -94,6 +154,30 @@ export default function ClientsPage() {
     a.click();
     URL.revokeObjectURL(url);
   };
+
+  // Downsample to one point per chartStepMin (X axis step)
+  const chartData = (() => {
+    if (trafficHistory.length === 0) return [];
+    const stepMs = chartStepMin * 60 * 1000;
+    const buckets: Array<{ tx: number; rx: number; sampledAt: string }> = [];
+    for (const s of trafficHistory) {
+      const t = new Date(s.sampledAt).getTime();
+      const bucketStart = Math.floor(t / stepMs) * stepMs;
+      const last = buckets[buckets.length - 1];
+      const lastStart = last ? Math.floor(new Date(last.sampledAt).getTime() / stepMs) * stepMs : null;
+      if (lastStart === null || bucketStart > lastStart) {
+        buckets.push({ ...s });
+      } else {
+        buckets[buckets.length - 1] = { ...s };
+      }
+    }
+    return buckets.map((s) => ({
+      time: new Date(s.sampledAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }),
+      tx: s.tx,
+      rx: s.rx,
+      total: s.tx + s.rx,
+    }));
+  })();
 
   return (
     <div className="space-y-6">
@@ -188,6 +272,34 @@ export default function ClientsPage() {
         </Dialog>
       </div>
 
+      <Dialog open={!!detailClientId} onOpenChange={(open) => !open && setDetailClientId(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{detailClient?.name ?? "Client"} — Traffic</DialogTitle>
+            <DialogDescription>
+              {detailClient && getServerName(detailClient.serverId)} · Last {trafficHistoryHours} h · Step {chartStepMin} min
+            </DialogDescription>
+          </DialogHeader>
+          <div className="h-[300px]">
+            {chartData.length === 0 ? (
+              <p className="text-muted-foreground text-sm">No traffic data yet. Data is saved every 5 min when traffic is fetched.</p>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis dataKey="time" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => formatBytes(v)} />
+                  <Tooltip formatter={(v: number) => formatBytes(v)} />
+                  <Legend />
+                  <Line type="monotone" dataKey="tx" name="Upload" stroke="hsl(var(--primary))" dot={false} />
+                  <Line type="monotone" dataKey="rx" name="Download" stroke="#22c55e" dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Card>
         <CardHeader>
           <CardTitle>All Clients</CardTitle>
@@ -198,67 +310,70 @@ export default function ClientsPage() {
           ) : clients?.length === 0 ? (
             <p className="text-muted-foreground">No clients yet. Sync servers or add a client manually.</p>
           ) : (
-            <Table>
+            <Table className="table-fixed">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Server</TableHead>
-                  <TableHead>Online</TableHead>
-                  <TableHead>Traffic</TableHead>
-                  <TableHead>Password</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="w-[140px]">Actions</TableHead>
+                  <TableHead className="w-[100px]">Name</TableHead>
+                  <TableHead className="w-[100px]">Server</TableHead>
+                  <TableHead className="w-[80px]">Online</TableHead>
+                  <TableHead className="w-[120px]">Total</TableHead>
+                  <TableHead className="w-[160px]">↑ Tx / ↓ Rx</TableHead>
+                  <TableHead className="w-[140px]">Password</TableHead>
+                  <TableHead className="w-[90px] text-center">Status</TableHead>
+                  <TableHead className="w-[100px] text-center">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {clients?.map((client) => (
-                  <TableRow key={client.id}>
-                    <TableCell className="font-medium">{client.name}</TableCell>
-                    <TableCell>{getServerName(client.serverId)}</TableCell>
-                    <TableCell>
+                  <TableRow
+                    key={client.id}
+                    className="cursor-pointer"
+                    onClick={() => setDetailClientId(client.id)}
+                  >
+                    <TableCell className="font-medium truncate align-middle">{client.name}</TableCell>
+                    <TableCell className="truncate align-middle">{getServerName(client.serverId)}</TableCell>
+                    <TableCell className="align-middle">
                       {onlineSet.has(client.id) ? (
                         <Badge variant="success" className="font-normal">Online</Badge>
                       ) : (
-                        <span className="text-muted-foreground text-sm">Offline</span>
+                        <Badge variant="secondary" className="font-normal">Offline</Badge>
                       )}
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
+                    <TableCell className="text-sm text-muted-foreground whitespace-nowrap align-middle tabular-nums">
+                      {traffic[client.id] ? formatBytes(traffic[client.id].tx + traffic[client.id].rx) : "—"}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground whitespace-nowrap align-middle tabular-nums">
                       {traffic[client.id] ? (
                         <span title={`↑ ${traffic[client.id].tx} B / ↓ ${traffic[client.id].rx} B`}>
                           ↑ {formatBytes(traffic[client.id].tx)} / ↓ {formatBytes(traffic[client.id].rx)}
                         </span>
                       ) : (
-                        <span>—</span>
+                        "—"
                       )}
                     </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <code className="text-sm">
+                    <TableCell onClick={(e) => e.stopPropagation()} className="align-middle">
+                      <div className="flex items-center gap-1 min-w-0 w-[120px]">
+                        <code className="text-sm truncate block w-[72px]" title={showPasswords[client.id] ? client.password : undefined}>
                           {showPasswords[client.id] ? client.password : "••••••••"}
                         </code>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6"
-                          onClick={() => toggleShowPassword(client.id)}
-                        >
-                          {showPasswords[client.id] ? (
-                            <EyeOff className="h-3 w-3" />
-                          ) : (
-                            <Eye className="h-3 w-3" />
-                          )}
+                        <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => toggleShowPassword(client.id)}>
+                          {showPasswords[client.id] ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
                         </Button>
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-6 w-6"
-                          onClick={() => handleCopyPassword(client.password)}
+                          className="h-6 w-6 shrink-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleCopyClientPassword(client.id, client.password);
+                          }}
                         >
-                          <Copy className="h-3 w-3" />
+                          {copiedClientId === client.id ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
                         </Button>
                       </div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()} className="align-middle">
+                      <div className="flex justify-center">
                       <Button
                         variant="ghost"
                         size="sm"
@@ -271,24 +386,14 @@ export default function ClientsPage() {
                           <Badge variant="secondary">Disabled</Badge>
                         )}
                       </Button>
+                      </div>
                     </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleDownloadConfig(client.id, client.name)}
-                          title="Download Clash config"
-                        >
+                    <TableCell onClick={(e) => e.stopPropagation()} className="align-middle">
+                      <div className="flex items-center gap-1 justify-center">
+                        <Button variant="ghost" size="icon" onClick={() => handleDownloadConfig(client.id, client.name)} title="Download Clash config">
                           <Download className="h-4 w-4" />
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => deleteClient.mutate(client.id)}
-                          disabled={deleteClient.isPending}
-                          title="Delete"
-                        >
+                        <Button variant="ghost" size="icon" onClick={() => deleteClient.mutate(client.id)} disabled={deleteClient.isPending} title="Delete">
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </div>

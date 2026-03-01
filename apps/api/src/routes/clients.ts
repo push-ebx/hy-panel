@@ -1,8 +1,8 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
-import { getDb, clients, servers } from "@hy2-panel/db";
+import { eq, desc, lt, and, gte } from "drizzle-orm";
+import { getDb, clients, servers, trafficSnapshots } from "@hy2-panel/db";
 import { authMiddleware, type JwtPayload } from "../middleware/auth";
 import { ApiError } from "../middleware/error-handler";
 import type { ApiResponse } from "@hy2-panel/shared";
@@ -50,7 +50,7 @@ clientsRoutes.get("/online", async (c) => {
       if (!res.ok) continue;
       const data = (await res.json()) as Record<string, number>;
       for (const name of Object.keys(data)) {
-        const client = allClients.find((cl) => cl.serverId === server.id && cl.name === name);
+        const client = allClients.find((cl) => cl.serverId === server.id && cl.name.toLowerCase() === name.toLowerCase());
         if (client) onlineIds.add(client.id);
       }
     } catch {
@@ -83,7 +83,7 @@ clientsRoutes.get("/traffic", async (c) => {
       if (!res.ok) continue;
       const data = (await res.json()) as Record<string, { tx: number; rx: number }>;
       for (const [name, stats] of Object.entries(data)) {
-        const client = allClients.find((cl) => cl.serverId === server.id && cl.name === name);
+        const client = allClients.find((cl) => cl.serverId === server.id && cl.name.toLowerCase() === name.toLowerCase());
         if (client) {
           traffic[client.id] = {
             tx: (traffic[client.id]?.tx ?? 0) + (stats.tx ?? 0),
@@ -94,6 +94,34 @@ clientsRoutes.get("/traffic", async (c) => {
     } catch {
       // skip server on error
     }
+  }
+
+  // Save snapshots (throttled: at most once per 5 min per client), keep last 7 days
+  try {
+    const SNAPSHOT_INTERVAL_MS = 5 * 60 * 1000;
+    const RETENTION_DAYS = 7;
+    const now = new Date();
+    const cutoff = new Date(now.getTime() - RETENTION_DAYS * 24 * 60 * 60 * 1000);
+
+    for (const [clientId, stats] of Object.entries(traffic)) {
+      const last = await db.query.trafficSnapshots.findFirst({
+        where: eq(trafficSnapshots.clientId, clientId),
+        orderBy: desc(trafficSnapshots.sampledAt),
+      });
+      if (!last || now.getTime() - last.sampledAt.getTime() > SNAPSHOT_INTERVAL_MS) {
+        await db.insert(trafficSnapshots).values({
+          id: crypto.randomUUID(),
+          clientId,
+          tx: stats.tx,
+          rx: stats.rx,
+          sampledAt: now,
+        });
+      }
+    }
+
+    await db.delete(trafficSnapshots).where(lt(trafficSnapshots.sampledAt, cutoff));
+  } catch {
+    // table may not exist yet
   }
 
   return c.json<ApiResponse>({
@@ -349,6 +377,34 @@ rules:
   - MATCH,🌍 VPN
 `;
 }
+
+clientsRoutes.get("/:id/traffic-history", async (c) => {
+  const id = c.req.param("id");
+  const period = c.req.query("period") || "24"; // hours
+  const db = await getDb();
+
+  const client = await db.query.clients.findFirst({
+    where: eq(clients.id, id),
+  });
+  if (!client) {
+    throw new ApiError(404, "Client not found");
+  }
+
+  const hours = Math.min(168, Math.max(1, parseInt(period, 10) || 24));
+  const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+
+  const snapshots = await db.query.trafficSnapshots.findMany({
+    where: and(eq(trafficSnapshots.clientId, id), gte(trafficSnapshots.sampledAt, since)),
+    orderBy: desc(trafficSnapshots.sampledAt),
+  });
+
+  const filtered = snapshots.reverse();
+
+  return c.json<ApiResponse>({
+    success: true,
+    data: filtered.map((s) => ({ tx: s.tx, rx: s.rx, sampledAt: s.sampledAt })),
+  });
+});
 
 clientsRoutes.get("/:id/export", async (c) => {
   const id = c.req.param("id");

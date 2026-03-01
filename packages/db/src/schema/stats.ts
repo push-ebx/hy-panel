@@ -50,7 +50,32 @@ export const clientStatsRelations = relations(clientStats, ({ one }) => ({
   }),
 }));
 
+// Traffic snapshots for charts (from Hysteria2 /traffic, saved periodically)
+export const trafficSnapshots = mysqlTable(
+  "traffic_snapshots",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    clientId: varchar("client_id", { length: 36 }).notNull().references(() => clients.id),
+    tx: bigint("tx", { mode: "number" }).notNull().default(0),
+    rx: bigint("rx", { mode: "number" }).notNull().default(0),
+    sampledAt: timestamp("sampled_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    clientIdIdx: index("traffic_snapshots_client_id_idx").on(table.clientId),
+    sampledAtIdx: index("traffic_snapshots_sampled_at_idx").on(table.sampledAt),
+  })
+);
+
+export const trafficSnapshotsRelations = relations(trafficSnapshots, ({ one }) => ({
+  client: one(clients, {
+    fields: [trafficSnapshots.clientId],
+    references: [clients.id],
+  }),
+}));
+
 export type ServerStatsSelect = typeof serverStats.$inferSelect;
 export type ServerStatsInsert = typeof serverStats.$inferInsert;
 export type ClientStatsSelect = typeof clientStats.$inferSelect;
 export type ClientStatsInsert = typeof clientStats.$inferInsert;
+export type TrafficSnapshotSelect = typeof trafficSnapshots.$inferSelect;
+export type TrafficSnapshotInsert = typeof trafficSnapshots.$inferInsert;
