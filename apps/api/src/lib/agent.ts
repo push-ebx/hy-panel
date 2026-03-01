@@ -7,7 +7,7 @@ interface ClientConfig {
   enabled: boolean;
 }
 
-export async function syncServerClients(serverId: string): Promise<void> {
+export async function syncServerClients(serverId: string): Promise<{ success: boolean; error?: string }> {
   const db = await getDb();
 
   const server = await db.query.servers.findFirst({
@@ -15,8 +15,7 @@ export async function syncServerClients(serverId: string): Promise<void> {
   });
 
   if (!server) {
-    console.error(`Server not found: ${serverId}`);
-    return;
+    return { success: false, error: "Server not found" };
   }
 
   const serverClients = await db.query.clients.findMany({
@@ -30,7 +29,12 @@ export async function syncServerClients(serverId: string): Promise<void> {
   }));
 
   try {
-    const response = await fetch(`${server.agentUrl}/sync`, {
+    let agentUrl = server.agentUrl;
+    if (!agentUrl.startsWith("http://") && !agentUrl.startsWith("https://")) {
+      agentUrl = `http://${agentUrl}`;
+    }
+
+    const response = await fetch(`${agentUrl}/sync`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -43,14 +47,16 @@ export async function syncServerClients(serverId: string): Promise<void> {
       throw new Error(`Agent returned ${response.status}`);
     }
 
-    // Update server status to online
     await db.update(servers).set({ status: "online" }).where(eq(servers.id, serverId));
 
     console.log(`Synced ${clientConfigs.length} clients to server ${server.name}`);
+    return { success: true };
   } catch (error) {
-    console.error(`Failed to sync server ${server.name}:`, error);
+    const message = error instanceof Error ? error.message : "Unknown error";
+    console.error(`Failed to sync server ${server.name}:`, message);
 
-    // Update server status to error
     await db.update(servers).set({ status: "error" }).where(eq(servers.id, serverId));
+
+    return { success: false, error: message };
   }
 }

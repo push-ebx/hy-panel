@@ -3,6 +3,7 @@ package hysteria
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"sync"
@@ -60,10 +61,16 @@ func (m *Manager) SyncClients(clients []ClientConfig) error {
 }
 
 func (m *Manager) reload() error {
+	// Try reload first, then restart as fallback
 	cmd := exec.Command("systemctl", "reload", m.serviceName)
-	if err := cmd.Run(); err != nil {
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("Reload failed: %s, trying restart...", string(output))
 		cmd = exec.Command("systemctl", "restart", m.serviceName)
-		return cmd.Run()
+		output, err = cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("restart failed: %s", string(output))
+		}
 	}
 	return nil
 }
