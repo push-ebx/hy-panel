@@ -3,11 +3,26 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Server, Users, Activity, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useDashboardStats, useSyncServers } from "@/lib/hooks";
+import { useDashboardStats, useSyncServers, useTraffic } from "@/lib/hooks";
+
+function formatBytes(bytes: number) {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+}
 
 export default function DashboardPage() {
   const stats = useDashboardStats();
   const syncServers = useSyncServers();
+  const { data: trafficData } = useTraffic(30000);
+
+  const totalTraffic = Object.values(trafficData?.traffic ?? {}).reduce(
+    (acc, { tx, rx }) => ({ tx: acc.tx + tx, rx: acc.rx + rx }),
+    { tx: 0, rx: 0 }
+  );
+  const totalBytes = totalTraffic.tx + totalTraffic.rx;
 
   return (
     <div className="space-y-6">
@@ -73,8 +88,10 @@ export default function DashboardPage() {
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">—</div>
-            <p className="text-xs text-muted-foreground">Not tracked</p>
+            <div className="text-2xl font-bold">{totalBytes > 0 ? formatBytes(totalBytes) : "—"}</div>
+            <p className="text-xs text-muted-foreground">
+              {totalBytes > 0 ? `↑ ${formatBytes(totalTraffic.tx)} / ↓ ${formatBytes(totalTraffic.rx)}` : "From Traffic Stats API"}
+            </p>
           </CardContent>
         </Card>
       </div>

@@ -87,6 +87,9 @@ curl -X POST http://localhost:8080/clients \
 
 Файл конфига перезаписывается; при отсутствии секции `auth` или `auth.userpass` она создаётся. После записи выполняется `systemctl restart HY2_SERVICE_NAME`.
 
+### GET /traffic
+Прокси к Hysteria2 Traffic Stats API: возвращает трафик по клиентам (имя → { tx, rx } в байтах). Требует `HY2_API_URL`.
+
 ### GET /online
 Прокси к Hysteria2 Traffic Stats API: возвращает список онлайн-клиентов (имя → количество подключений). Для работы нужен `HY2_API_URL` в конфиге агента; в конфиге Hysteria2 должна быть включена секция `trafficStats` (listen и при необходимости secret).
 
