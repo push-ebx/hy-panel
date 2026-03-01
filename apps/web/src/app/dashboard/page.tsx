@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useDashboardStats, useSyncServers, useTraffic, useOnlineClients, useServerSystemStats } from "@/lib/hooks";
 import { useSettingsStore } from "@/store/settings";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 
 function formatBytes(bytes: number) {
   if (bytes === 0) return "0 B";
@@ -13,6 +14,30 @@ function formatBytes(bytes: number) {
   const sizes = ["B", "KB", "MB", "GB", "TB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+}
+
+function progressBarColor(percent: number) {
+  if (percent >= 90) return "bg-red-500";
+  if (percent >= 70) return "bg-amber-500";
+  return "bg-primary";
+}
+
+function MetricBar({ percent, label }: { percent: number; label: string }) {
+  const p = Math.min(100, Math.max(0, percent));
+  return (
+    <div className="space-y-1">
+      <div className="flex justify-between text-xs">
+        <span className="text-muted-foreground">{label}</span>
+        <span className="tabular-nums font-medium">{p.toFixed(0)}%</span>
+      </div>
+      <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all duration-500 ${progressBarColor(p)}`}
+          style={{ width: `${p}%` }}
+        />
+      </div>
+    </div>
+  );
 }
 
 export default function DashboardPage() {
@@ -109,8 +134,9 @@ export default function DashboardPage() {
       </div>
 
       {systemStats.length > 0 && (
-        <div>
-          <h2 className="text-lg font-semibold mb-3">Server resources</h2>
+        <div className="space-y-6">
+          <h2 className="text-lg font-semibold">Server resources</h2>
+
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {systemStats.map((s) => (
               <Card key={s.serverId}>
@@ -122,45 +148,36 @@ export default function DashboardPage() {
                     </Badge>
                   </div>
                 </CardHeader>
-                <CardContent className="space-y-3 text-sm">
+                <CardContent className="space-y-4 text-sm">
                   {s.error ? (
                     <p className="text-muted-foreground">{s.error}</p>
                   ) : (
                     <>
-                      <div className="flex items-center justify-between">
-                        <span className="flex items-center gap-2 text-muted-foreground">
-                          <Cpu className="h-4 w-4" /> CPU
-                        </span>
-                        <span className="tabular-nums font-medium">
-                          {s.cpuPercent != null ? `${s.cpuPercent.toFixed(1)}%` : "—"}
-                        </span>
-                      </div>
+                      {s.cpuPercent != null && (
+                        <MetricBar percent={s.cpuPercent} label="CPU" />
+                      )}
                       {s.ram && (
-                        <div className="flex items-center justify-between">
-                          <span className="flex items-center gap-2 text-muted-foreground">
-                            <MemoryStick className="h-4 w-4" /> RAM
-                          </span>
-                          <span className="tabular-nums font-medium">
-                            {formatBytes(s.ram.usedBytes)} / {formatBytes(s.ram.totalBytes)} ({s.ram.usedPercent.toFixed(0)}%)
-                          </span>
+                        <div className="space-y-1">
+                          <MetricBar percent={s.ram.usedPercent} label="RAM" />
+                          <p className="text-xs text-muted-foreground tabular-nums">
+                            {formatBytes(s.ram.usedBytes)} / {formatBytes(s.ram.totalBytes)}
+                          </p>
                         </div>
                       )}
                       {s.swap && s.swap.totalBytes > 0 && (
-                        <div className="flex items-center justify-between">
-                          <span className="text-muted-foreground">Swap</span>
-                          <span className="tabular-nums font-medium">
-                            {formatBytes(s.swap.usedBytes)} / {formatBytes(s.swap.totalBytes)} ({s.swap.usedPercent.toFixed(0)}%)
-                          </span>
+                        <div className="space-y-1">
+                          <MetricBar percent={s.swap.usedPercent} label="Swap" />
+                          <p className="text-xs text-muted-foreground tabular-nums">
+                            {formatBytes(s.swap.usedBytes)} / {formatBytes(s.swap.totalBytes)}
+                          </p>
                         </div>
                       )}
                       {s.disk && (
-                        <div className="flex items-center justify-between">
-                          <span className="flex items-center gap-2 text-muted-foreground">
-                            <HardDrive className="h-4 w-4" /> Disk
-                          </span>
-                          <span className="tabular-nums font-medium">
-                            {formatBytes(s.disk.usedBytes)} / {formatBytes(s.disk.totalBytes)} ({s.disk.usedPercent.toFixed(0)}%)
-                          </span>
+                        <div className="space-y-1">
+                          <MetricBar percent={s.disk.usedPercent} label="Disk" />
+                          <p className="text-xs text-muted-foreground tabular-nums">
+                            {formatBytes(s.disk.usedBytes)} / {formatBytes(s.disk.totalBytes)}
+                          </p>
                         </div>
                       )}
                     </>
