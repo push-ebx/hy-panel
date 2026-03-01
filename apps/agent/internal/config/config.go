@@ -6,20 +6,18 @@ import (
 )
 
 type Config struct {
-	APIEndpoint   string
-	WSEndpoint    string
-	AgentToken    string
-	Hy2ConfigPath string
-	Hy2BinaryPath string
+	Port           string
+	AgentToken     string
+	Hy2ConfigPath  string
+	Hy2ServiceName string
 }
 
 func Load() (*Config, error) {
 	cfg := &Config{
-		APIEndpoint:   getEnv("API_ENDPOINT", "http://localhost:4000"),
-		WSEndpoint:    getEnv("WS_ENDPOINT", "ws://localhost:4001"),
-		AgentToken:    os.Getenv("AGENT_TOKEN"),
-		Hy2ConfigPath: getEnv("HY2_CONFIG_PATH", "/etc/hysteria/config.yaml"),
-		Hy2BinaryPath: getEnv("HY2_BINARY_PATH", "/usr/local/bin/hysteria"),
+		Port:           getEnv("PORT", "8080"),
+		AgentToken:     os.Getenv("AGENT_TOKEN"),
+		Hy2ConfigPath:  getEnv("HY2_CONFIG_PATH", "/etc/hysteria/config.yaml"),
+		Hy2ServiceName: getEnv("HY2_SERVICE_NAME", "hysteria-server"),
 	}
 
 	if cfg.AgentToken == "" {

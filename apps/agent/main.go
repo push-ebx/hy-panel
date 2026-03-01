@@ -1,69 +1,89 @@
 package main
 
 import (
+	"encoding/json"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/joho/godotenv"
 
-	"github.com/hy2-panel/agent/internal/api"
 	"github.com/hy2-panel/agent/internal/config"
 	"github.com/hy2-panel/agent/internal/hysteria"
-	"github.com/hy2-panel/agent/internal/ws"
 )
 
+type SyncRequest struct {
+	Clients []hysteria.ClientConfig `json:"clients"`
+}
+
 func main() {
-	// Load .env file
 	_ = godotenv.Load()
 
-	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	// Initialize API client (for HTTP fallback)
-	apiClient := api.NewClient(cfg.APIEndpoint, cfg.AgentToken)
+	hy2Manager := hysteria.NewManager(cfg.Hy2ConfigPath, cfg.Hy2ServiceName)
 
-	// Initialize Hysteria2 manager
-	hy2Manager := hysteria.NewManager(cfg.Hy2ConfigPath, cfg.Hy2BinaryPath)
+	mux := http.NewServeMux()
 
-	// Sync handler
-	syncHandler := func() {
-		log.Println("Syncing clients...")
-		clients, err := apiClient.GetClients()
-		if err != nil {
-			log.Printf("Failed to get clients: %v", err)
-			return
+	// Auth middleware
+	authMiddleware := func(next http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			token := r.Header.Get("Authorization")
+			if token != "Bearer "+cfg.AgentToken {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+			next(w, r)
 		}
-		err = hy2Manager.SyncClients(clients)
-		if err != nil {
-			log.Printf("Failed to sync clients: %v", err)
-			return
-		}
-		log.Printf("Synced %d clients", len(clients))
 	}
 
-	// Heartbeat handler
-	heartbeatHandler := func() api.StatsData {
-		return hy2Manager.GetStats()
+	// Sync endpoint - receives clients list from panel
+	mux.HandleFunc("POST /sync", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		var req SyncRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request", http.StatusBadRequest)
+			return
+		}
+
+		log.Printf("Received sync request with %d clients", len(req.Clients))
+
+		if err := hy2Manager.SyncClients(req.Clients); err != nil {
+			log.Printf("Sync failed: %v", err)
+			http.Error(w, "Sync failed", http.StatusInternalServerError)
+			return
+		}
+
+		log.Printf("Synced %d clients", len(req.Clients))
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	}))
+
+	// Health check
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	})
+
+	server := &http.Server{
+		Addr:    ":" + cfg.Port,
+		Handler: mux,
 	}
 
-	// Create WebSocket client
-	wsClient := ws.NewClient(cfg.WSEndpoint, cfg.AgentToken, syncHandler, heartbeatHandler)
+	go func() {
+		log.Printf("Agent HTTP server running on port %s", cfg.Port)
+		if err := server.ListenAndServe(); err != http.ErrServerClosed {
+			log.Fatalf("HTTP server error: %v", err)
+		}
+	}()
 
-	// Start WebSocket connection (with auto-reconnect)
-	go wsClient.Connect()
-
-	log.Println("Agent started successfully")
-
-	// Wait for termination signal
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
 	log.Println("Shutting down agent...")
-	wsClient.Close()
+	server.Close()
 }

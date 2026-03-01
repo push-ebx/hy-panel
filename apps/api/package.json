@@ -20,12 +20,10 @@
     "jose": "^5.9.0",
     "argon2": "^0.41.0",
     "drizzle-orm": "^0.37.0",
-    "mysql2": "^3.11.0",
-    "ws": "^8.18.0"
+    "mysql2": "^3.11.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "@types/ws": "^8.5.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"
   }

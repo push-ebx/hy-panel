@@ -11,6 +11,7 @@ const createServerSchema = z.object({
   name: z.string().min(1).max(255),
   host: z.string().min(1),
   port: z.number().int().min(1).max(65535),
+  agentUrl: z.string().url(),
   config: z.object({
     listen: z.string(),
     tls: z.object({
@@ -72,6 +73,7 @@ serversRoutes.post("/", zValidator("json", createServerSchema), async (c) => {
     name: data.name,
     host: data.host,
     port: data.port,
+    agentUrl: data.agentUrl,
     agentToken,
     config: data.config,
   });

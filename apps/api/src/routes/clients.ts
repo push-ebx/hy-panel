@@ -6,7 +6,7 @@ import { getDb, clients } from "@hy2-panel/db";
 import { authMiddleware, type JwtPayload } from "../middleware/auth";
 import { ApiError } from "../middleware/error-handler";
 import type { ApiResponse } from "@hy2-panel/shared";
-import { notifyServerSync } from "../ws";
+import { syncServerClients } from "../lib/agent";
 
 const createClientSchema = z.object({
   serverId: z.string().uuid(),
@@ -62,8 +62,8 @@ clientsRoutes.post("/", zValidator("json", createClientSchema), async (c) => {
     expiresAt: data.expiresAt ? new Date(data.expiresAt) : null,
   });
 
-  // Instant sync - notify agent
-  notifyServerSync(data.serverId);
+  // Sync to agent
+  syncServerClients(data.serverId);
 
   return c.json<ApiResponse>(
     {
@@ -96,8 +96,8 @@ clientsRoutes.patch("/:id", zValidator("json", updateClientSchema), async (c) =>
     })
     .where(eq(clients.id, id));
 
-  // Instant sync - notify agent
-  notifyServerSync(client.serverId);
+  // Sync to agent
+  syncServerClients(client.serverId);
 
   return c.json<ApiResponse>({
     success: true,
@@ -119,8 +119,8 @@ clientsRoutes.delete("/:id", async (c) => {
 
   await db.delete(clients).where(eq(clients.id, id));
 
-  // Instant sync - notify agent
-  notifyServerSync(client.serverId);
+  // Sync to agent
+  syncServerClients(client.serverId);
 
   return c.json<ApiResponse>({
     success: true,

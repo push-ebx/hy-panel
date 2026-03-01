@@ -3,8 +3,9 @@ export interface Server {
   name: string;
   host: string;
   port: number;
-  status: ServerStatus;
+  agentUrl: string;
   agentToken: string;
+  status: ServerStatus;
   config: Hy2Config;
   createdAt: Date;
   updatedAt: Date;
@@ -47,6 +48,7 @@ export interface CreateServerDto {
   name: string;
   host: string;
   port: number;
+  agentUrl: string;
   config: Hy2Config;
 }
 
