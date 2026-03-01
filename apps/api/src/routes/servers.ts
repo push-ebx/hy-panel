@@ -2,8 +2,8 @@ import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
-import { getDb, servers } from "@hy2-panel/db";
-import { authMiddleware } from "../middleware/auth";
+import { getDb, servers, clients } from "@hy2-panel/db";
+import { authMiddleware, type JwtPayload } from "../middleware/auth";
 import { ApiError } from "../middleware/error-handler";
 import type { ApiResponse } from "@hy2-panel/shared";
 import { syncServerClients } from "../lib/agent";
@@ -113,6 +113,74 @@ serversRoutes.post("/sync", async (c) => {
     success: failed === 0,
     message: `Synced ${allServers.length - failed}/${allServers.length} servers`,
   });
+});
+
+// Import clients from server config
+serversRoutes.post("/:id/import", async (c) => {
+  const id = c.req.param("id");
+  const user = c.get("user") as JwtPayload;
+  const db = await getDb();
+
+  const server = await db.query.servers.findFirst({
+    where: eq(servers.id, id),
+  });
+
+  if (!server) {
+    throw new ApiError(404, "Server not found");
+  }
+
+  let agentUrl = server.agentUrl;
+  if (!agentUrl.startsWith("http://") && !agentUrl.startsWith("https://")) {
+    agentUrl = `http://${agentUrl}`;
+  }
+
+  try {
+    const response = await fetch(`${agentUrl}/export`, {
+      headers: {
+        Authorization: `Bearer ${server.agentToken}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Agent returned ${response.status}`);
+    }
+
+    const data = await response.json() as { clients: Array<{ id: string; password: string }> };
+
+    let imported = 0;
+    for (const client of data.clients) {
+      // Check if client already exists
+      const existing = await db.query.clients.findFirst({
+        where: eq(clients.password, client.password),
+      });
+
+      if (!existing) {
+        await db.insert(clients).values({
+          id: crypto.randomUUID(),
+          userId: user.sub,
+          serverId: id,
+          name: client.id || `Imported ${imported + 1}`,
+          password: client.password,
+          uploadLimit: 0,
+          downloadLimit: 0,
+          totalLimit: 0,
+        });
+        imported++;
+      }
+    }
+
+    await db.update(servers).set({ status: "online" }).where(eq(servers.id, id));
+
+    return c.json<ApiResponse>({
+      success: true,
+      data: { imported, total: data.clients.length },
+      message: `Imported ${imported} clients`,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    await db.update(servers).set({ status: "error" }).where(eq(servers.id, id));
+    throw new ApiError(502, message);
+  }
 });
 
 // Sync single server

@@ -1,12 +1,12 @@
 package hysteria
 
 import (
-	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"sync"
+
+	"gopkg.in/yaml.v3"
 )
 
 type Manager struct {
@@ -21,8 +21,12 @@ type ClientConfig struct {
 	Enabled  bool   `json:"enabled"`
 }
 
-type Hy2UserPass struct {
-	Password string `json:"password"`
+// Hysteria2 config structure
+type Hy2Config struct {
+	Auth struct {
+		Type     string            `yaml:"type"`
+		UserPass map[string]string `yaml:"userpass"`
+	} `yaml:"auth"`
 }
 
 func NewManager(configPath, serviceName string) *Manager {
@@ -32,45 +36,80 @@ func NewManager(configPath, serviceName string) *Manager {
 	}
 }
 
+// ReadClients reads existing clients from Hysteria2 config
+func (m *Manager) ReadClients() ([]ClientConfig, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	data, err := os.ReadFile(m.configPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config: %w", err)
+	}
+
+	var config Hy2Config
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse config: %w", err)
+	}
+
+	var clients []ClientConfig
+	for name, password := range config.Auth.UserPass {
+		clients = append(clients, ClientConfig{
+			ID:       name,
+			Password: password,
+			Enabled:  true,
+		})
+	}
+
+	return clients, nil
+}
+
 func (m *Manager) SyncClients(clients []ClientConfig) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Build userpass auth list
-	var userPassList []Hy2UserPass
+	// Build userpass auth map for YAML
+	userPass := make(map[string]string)
 	for _, client := range clients {
 		if client.Enabled {
-			userPassList = append(userPassList, Hy2UserPass{
-				Password: client.Password,
-			})
+			userPass[client.ID] = client.Password
 		}
 	}
 
-	// Write to auth file
-	authFilePath := m.configPath + ".auth.json"
-	authData, err := json.MarshalIndent(userPassList, "", "  ")
+	// Read existing config
+	data, err := os.ReadFile(m.configPath)
 	if err != nil {
-		return fmt.Errorf("failed to marshal auth config: %w", err)
+		return fmt.Errorf("failed to read config: %w", err)
 	}
 
-	if err := os.WriteFile(authFilePath, authData, 0600); err != nil {
-		return fmt.Errorf("failed to write auth config: %w", err)
+	var config map[string]interface{}
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return fmt.Errorf("failed to parse config: %w", err)
+	}
+
+	// Update auth section
+	config["auth"] = map[string]interface{}{
+		"type":     "userpass",
+		"userpass": userPass,
+	}
+
+	// Write back
+	newData, err := yaml.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	if err := os.WriteFile(m.configPath, newData, 0600); err != nil {
+		return fmt.Errorf("failed to write config: %w", err)
 	}
 
 	return m.reload()
 }
 
 func (m *Manager) reload() error {
-	// Try reload first, then restart as fallback
-	cmd := exec.Command("systemctl", "reload", m.serviceName)
+	cmd := exec.Command("systemctl", "restart", m.serviceName)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Printf("Reload failed: %s, trying restart...", string(output))
-		cmd = exec.Command("systemctl", "restart", m.serviceName)
-		output, err = cmd.CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("restart failed: %s", string(output))
-		}
+		return fmt.Errorf("restart failed: %s", string(output))
 	}
 	return nil
 }

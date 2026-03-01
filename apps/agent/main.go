@@ -63,6 +63,20 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	}))
 
+	// Export current clients from config
+	mux.HandleFunc("GET /export", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		clients, err := hy2Manager.ReadClients()
+		if err != nil {
+			log.Printf("Export failed: %v", err)
+			http.Error(w, "Export failed", http.StatusInternalServerError)
+			return
+		}
+
+		log.Printf("Exported %d clients from config", len(clients))
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"clients": clients})
+	}))
+
 	// Health check
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
