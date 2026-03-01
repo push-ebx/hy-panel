@@ -1,0 +1,24 @@
+{
+  "name": "hy2-panel",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "turbo dev",
+    "dev:api": "turbo dev --filter=@hy2-panel/api",
+    "dev:web": "turbo dev --filter=@hy2-panel/web",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "db:generate": "pnpm --filter=@hy2-panel/db db:generate",
+    "db:migrate": "pnpm --filter=@hy2-panel/db db:migrate",
+    "db:push": "pnpm --filter=@hy2-panel/db db:push",
+    "seed": "pnpm --filter=@hy2-panel/api seed"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.0",
+    "typescript": "^5.7.0"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20"
+  }
+}
