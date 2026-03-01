@@ -24,13 +24,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useServers, useCreateServer, useDeleteServer, useSyncServers } from "@/lib/hooks";
+import { useServers, useCreateServer, useDeleteServer, useSyncServers, useCheckServersStatus } from "@/lib/hooks";
 
 export default function ServersPage() {
   const { data: servers, isLoading } = useServers();
   const createServer = useCreateServer();
   const deleteServer = useDeleteServer();
   const syncServers = useSyncServers();
+  const checkStatus = useCheckServersStatus();
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newServer, setNewServer] = useState({ name: "", host: "", agentUrl: "" });
@@ -78,6 +79,14 @@ export default function ServersPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Servers</h1>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => checkStatus.mutate()}
+            disabled={checkStatus.isPending}
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${checkStatus.isPending ? "animate-spin" : ""}`} />
+            Check status
+          </Button>
           <Button
             variant="outline"
             onClick={handleSync}

@@ -3,7 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Server, Users, Activity, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useDashboardStats, useSyncServers, useTraffic } from "@/lib/hooks";
+import { useDashboardStats, useSyncServers, useTraffic, useOnlineClients } from "@/lib/hooks";
 import { useSettingsStore } from "@/store/settings";
 
 function formatBytes(bytes: number) {
@@ -19,6 +19,9 @@ export default function DashboardPage() {
   const syncServers = useSyncServers();
   const refreshTrafficMs = (useSettingsStore((s) => s.refreshTrafficSec) ?? 30) * 1000;
   const { data: trafficData } = useTraffic(refreshTrafficMs);
+  const onlineTickMs = (useSettingsStore((s) => s.onlineTickSec) ?? 10) * 1000;
+  const { data: onlineData } = useOnlineClients(onlineTickMs);
+  const onlineCount = onlineData?.online?.length ?? 0;
 
   const totalTraffic = Object.values(trafficData?.traffic ?? {}).reduce(
     (acc, { tx, rx }) => ({ tx: acc.tx + tx, rx: acc.rx + rx }),
@@ -79,8 +82,10 @@ export default function DashboardPage() {
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">—</div>
-            <p className="text-xs text-muted-foreground">Not tracked</p>
+            <div className="text-2xl font-bold">{onlineCount}</div>
+            <p className="text-xs text-muted-foreground">
+              {onlineCount === 1 ? "1 client online" : `${onlineCount} clients online now`}
+            </p>
           </CardContent>
         </Card>
 

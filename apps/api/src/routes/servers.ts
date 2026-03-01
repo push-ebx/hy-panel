@@ -23,6 +23,37 @@ export const serversRoutes = new Hono();
 
 serversRoutes.use("*", authMiddleware);
 
+// Check status of all servers (GET /health on each agent), update status in DB
+serversRoutes.post("/check-status", async (c) => {
+  const db = await getDb();
+  const allServers = await db.query.servers.findMany();
+
+  for (const server of allServers) {
+    let agentUrl = server.agentUrl;
+    if (!agentUrl.startsWith("http://") && !agentUrl.startsWith("https://")) {
+      agentUrl = `http://${agentUrl}`;
+    }
+    agentUrl = agentUrl.replace(/\/$/, "");
+
+    try {
+      const response = await fetch(`${agentUrl}/health`);
+      await db
+        .update(servers)
+        .set({ status: response.ok ? "online" : "error" })
+        .where(eq(servers.id, server.id));
+    } catch {
+      await db.update(servers).set({ status: "error" }).where(eq(servers.id, server.id));
+    }
+  }
+
+  const updated = await db.query.servers.findMany();
+  return c.json<ApiResponse>({
+    success: true,
+    data: updated,
+    message: "Status updated",
+  });
+});
+
 // Sync all servers - import clients from agent configs to DB
 serversRoutes.post("/sync", async (c) => {
   const user = c.get("user") as JwtPayload;
@@ -37,15 +68,13 @@ serversRoutes.post("/sync", async (c) => {
     if (!agentUrl.startsWith("http://") && !agentUrl.startsWith("https://")) {
       agentUrl = `http://${agentUrl}`;
     }
+    agentUrl = agentUrl.replace(/\/$/, "");
 
     try {
       const response = await fetch(`${agentUrl}/export`, {
         headers: { Authorization: `Bearer ${server.agentToken}` },
       });
-
-      if (!response.ok) {
-        throw new Error(`Agent returned ${response.status}`);
-      }
+      if (!response.ok) throw new Error(`Agent returned ${response.status}`);
 
       const data = (await response.json()) as {
         clients: Array<{ id: string; password: string }>;

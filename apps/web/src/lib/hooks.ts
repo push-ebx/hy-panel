@@ -63,6 +63,16 @@ export function useSyncServers() {
   });
 }
 
+export function useCheckServersStatus() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<Server[]>("/api/servers/check-status"),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["servers"] });
+    },
+  });
+}
+
 // ============ Clients ============
 
 export function useClients() {
