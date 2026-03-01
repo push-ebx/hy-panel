@@ -12,6 +12,7 @@ import {
   Settings,
   LogOut,
 } from "lucide-react";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -26,8 +27,9 @@ export function Sidebar() {
 
   return (
     <div className="flex h-full w-64 flex-col border-r bg-card">
-      <div className="p-6">
+      <div className="flex items-center justify-between p-6">
         <h1 className="text-xl font-bold">Hy2 Panel</h1>
+        <ThemeToggle />
       </div>
 
       <nav className="flex-1 space-y-1 px-3">

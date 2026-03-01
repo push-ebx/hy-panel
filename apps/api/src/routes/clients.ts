@@ -64,6 +64,44 @@ clientsRoutes.get("/online", async (c) => {
   });
 });
 
+// GET /traffic — aggregate traffic stats (tx, rx in bytes) per client from all servers' agents
+clientsRoutes.get("/traffic", async (c) => {
+  const db = await getDb();
+  const allServers = await db.query.servers.findMany();
+  const allClients = await db.query.clients.findMany();
+  const traffic: Record<string, { tx: number; rx: number }> = {};
+
+  for (const server of allServers) {
+    let agentUrl = server.agentUrl;
+    if (!agentUrl.startsWith("http://") && !agentUrl.startsWith("https://")) {
+      agentUrl = `http://${agentUrl}`;
+    }
+    try {
+      const res = await fetch(`${agentUrl.replace(/\/$/, "")}/traffic`, {
+        headers: { Authorization: `Bearer ${server.agentToken}` },
+      });
+      if (!res.ok) continue;
+      const data = (await res.json()) as Record<string, { tx: number; rx: number }>;
+      for (const [name, stats] of Object.entries(data)) {
+        const client = allClients.find((cl) => cl.serverId === server.id && cl.name === name);
+        if (client) {
+          traffic[client.id] = {
+            tx: (traffic[client.id]?.tx ?? 0) + (stats.tx ?? 0),
+            rx: (traffic[client.id]?.rx ?? 0) + (stats.rx ?? 0),
+          };
+        }
+      }
+    } catch {
+      // skip server on error
+    }
+  }
+
+  return c.json<ApiResponse>({
+    success: true,
+    data: { traffic },
+  });
+});
+
 clientsRoutes.get("/", async (c) => {
   const db = await getDb();
   const allClients = await db.query.clients.findMany();

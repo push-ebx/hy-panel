@@ -80,10 +80,18 @@ export function useClient(id: string) {
   });
 }
 
-export function useOnlineClients(refetchInterval = 15000) {
+export function useOnlineClients(refetchInterval = 1500) {
   return useQuery({
     queryKey: ["clients", "online"],
     queryFn: () => api.get<{ online: string[] }>("/api/clients/online"),
+    refetchInterval,
+  });
+}
+
+export function useTraffic(refetchInterval = 30000) {
+  return useQuery({
+    queryKey: ["clients", "traffic"],
+    queryFn: () => api.get<{ traffic: Record<string, { tx: number; rx: number }> }>("/api/clients/traffic"),
     refetchInterval,
   });
 }

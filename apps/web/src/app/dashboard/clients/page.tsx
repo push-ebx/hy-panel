@@ -24,14 +24,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useClients, useServers, useCreateClient, useDeleteClient, useUpdateClient, useOnlineClients } from "@/lib/hooks";
+import { useClients, useServers, useCreateClient, useDeleteClient, useUpdateClient, useOnlineClients, useTraffic } from "@/lib/hooks";
 import { api } from "@/lib/api";
 
 export default function ClientsPage() {
   const { data: clients, isLoading } = useClients();
   const { data: servers } = useServers();
-  const { data: onlineData } = useOnlineClients(15000);
+  const { data: onlineData } = useOnlineClients(1500);
+  const { data: trafficData } = useTraffic(30000);
   const onlineSet = new Set(onlineData?.online ?? []);
+  const traffic = trafficData?.traffic ?? {};
   const createClient = useCreateClient();
   const deleteClient = useDeleteClient();
   const updateClient = useUpdateClient();
@@ -73,6 +75,14 @@ export default function ClientsPage() {
 
   const getServerName = (serverId: string) => {
     return servers?.find((s) => s.id === serverId)?.name ?? "Unknown";
+  };
+
+  const formatBytes = (bytes: number) => {
+    if (bytes === 0) return "0 B";
+    const k = 1024;
+    const sizes = ["B", "KB", "MB", "GB", "TB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
   };
 
   const handleDownloadConfig = async (clientId: string, clientName: string) => {
@@ -194,6 +204,7 @@ export default function ClientsPage() {
                   <TableHead>Name</TableHead>
                   <TableHead>Server</TableHead>
                   <TableHead>Online</TableHead>
+                  <TableHead>Traffic</TableHead>
                   <TableHead>Password</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="w-[140px]">Actions</TableHead>
@@ -209,6 +220,15 @@ export default function ClientsPage() {
                         <Badge variant="success" className="font-normal">Online</Badge>
                       ) : (
                         <span className="text-muted-foreground text-sm">Offline</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {traffic[client.id] ? (
+                        <span title={`↑ ${traffic[client.id].tx} B / ↓ ${traffic[client.id].rx} B`}>
+                          ↑ {formatBytes(traffic[client.id].tx)} / ↓ {formatBytes(traffic[client.id].rx)}
+                        </span>
+                      ) : (
+                        <span>—</span>
                       )}
                     </TableCell>
                     <TableCell>

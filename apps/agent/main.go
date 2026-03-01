@@ -108,8 +108,9 @@ func main() {
 
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
-			log.Printf("Hy2 API /online request failed: %v", err)
-			http.Error(w, "Failed to fetch online status", http.StatusBadGateway)
+			log.Printf("Hy2 API /online request failed: %v (check HY2_API_URL and trafficStats in Hysteria2 config)", err)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]int{})
 			return
 		}
 		defer resp.Body.Close()
@@ -118,6 +119,44 @@ func main() {
 			body, _ := io.ReadAll(resp.Body)
 			log.Printf("Hy2 API /online returned %d: %s", resp.StatusCode, string(body))
 			http.Error(w, "Upstream error", resp.StatusCode)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		io.Copy(w, resp.Body)
+	}))
+
+	// Traffic stats from Hysteria2 Traffic Stats API (GET /traffic)
+	mux.HandleFunc("GET /traffic", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		if cfg.Hy2ApiUrl == "" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{})
+			return
+		}
+
+		req, err := http.NewRequest(http.MethodGet, cfg.Hy2ApiUrl+"/traffic", nil)
+		if err != nil {
+			http.Error(w, "Failed to build request", http.StatusInternalServerError)
+			return
+		}
+		if cfg.Hy2ApiSecret != "" {
+			req.Header.Set("Authorization", cfg.Hy2ApiSecret)
+		}
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			log.Printf("Hy2 API /traffic request failed: %v", err)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{})
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			log.Printf("Hy2 API /traffic returned %d: %s", resp.StatusCode, string(body))
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{})
 			return
 		}
 
