@@ -1,9 +1,10 @@
 "use client";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Server, Users, Activity, RefreshCw } from "lucide-react";
+import { Server, Users, Activity, RefreshCw, Cpu, HardDrive, MemoryStick } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useDashboardStats, useSyncServers, useTraffic, useOnlineClients } from "@/lib/hooks";
+import { Badge } from "@/components/ui/badge";
+import { useDashboardStats, useSyncServers, useTraffic, useOnlineClients, useServerSystemStats } from "@/lib/hooks";
 import { useSettingsStore } from "@/store/settings";
 
 function formatBytes(bytes: number) {
@@ -29,14 +30,18 @@ export default function DashboardPage() {
   );
   const totalBytes = totalTraffic.tx + totalTraffic.rx;
 
+  const refreshSystemMs = (useSettingsStore((s) => s.refreshTrafficSec) ?? 30) * 1000;
+  const { data: systemStats = [] } = useServerSystemStats(refreshSystemMs);
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Dashboard</h1>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-2xl font-bold md:text-3xl">Dashboard</h1>
         <Button
           variant="outline"
           onClick={() => syncServers.mutate()}
           disabled={syncServers.isPending}
+          className="w-full sm:w-auto"
         >
           <RefreshCw className={`mr-2 h-4 w-4 ${syncServers.isPending ? "animate-spin" : ""}`} />
           Sync Servers
@@ -102,6 +107,70 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {systemStats.length > 0 && (
+        <div>
+          <h2 className="text-lg font-semibold mb-3">Server resources</h2>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {systemStats.map((s) => (
+              <Card key={s.serverId}>
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base">{s.serverName}</CardTitle>
+                    <Badge variant={s.status === "online" ? "success" : "secondary"} className="text-xs">
+                      {s.status}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm">
+                  {s.error ? (
+                    <p className="text-muted-foreground">{s.error}</p>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <span className="flex items-center gap-2 text-muted-foreground">
+                          <Cpu className="h-4 w-4" /> CPU
+                        </span>
+                        <span className="tabular-nums font-medium">
+                          {s.cpuPercent != null ? `${s.cpuPercent.toFixed(1)}%` : "—"}
+                        </span>
+                      </div>
+                      {s.ram && (
+                        <div className="flex items-center justify-between">
+                          <span className="flex items-center gap-2 text-muted-foreground">
+                            <MemoryStick className="h-4 w-4" /> RAM
+                          </span>
+                          <span className="tabular-nums font-medium">
+                            {formatBytes(s.ram.usedBytes)} / {formatBytes(s.ram.totalBytes)} ({s.ram.usedPercent.toFixed(0)}%)
+                          </span>
+                        </div>
+                      )}
+                      {s.swap && s.swap.totalBytes > 0 && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-muted-foreground">Swap</span>
+                          <span className="tabular-nums font-medium">
+                            {formatBytes(s.swap.usedBytes)} / {formatBytes(s.swap.totalBytes)} ({s.swap.usedPercent.toFixed(0)}%)
+                          </span>
+                        </div>
+                      )}
+                      {s.disk && (
+                        <div className="flex items-center justify-between">
+                          <span className="flex items-center gap-2 text-muted-foreground">
+                            <HardDrive className="h-4 w-4" /> Disk
+                          </span>
+                          <span className="tabular-nums font-medium">
+                            {formatBytes(s.disk.usedBytes)} / {formatBytes(s.disk.totalBytes)} ({s.disk.usedPercent.toFixed(0)}%)
+                          </span>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -6,6 +6,7 @@ import type { User, AuthResponse } from "@hy2-panel/shared";
 interface AuthState {
   user: Omit<User, "password"> | null;
   token: string | null;
+  _hasHydrated: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
   checkAuth: () => Promise<void>;
@@ -16,6 +17,7 @@ export const useAuthStore = create<AuthState>()(
     (set, get) => ({
       user: null,
       token: null,
+      _hasHydrated: false,
 
       login: async (email: string, password: string) => {
         const data = await api.post<AuthResponse>("/api/auth/login", {
@@ -47,6 +49,9 @@ export const useAuthStore = create<AuthState>()(
     {
       name: "auth-storage",
       partialize: (state) => ({ token: state.token }),
+      onRehydrateStorage: () => (state, err) => {
+        useAuthStore.setState({ _hasHydrated: true });
+      },
     }
   )
 );

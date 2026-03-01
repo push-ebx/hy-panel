@@ -7,7 +7,7 @@ import { authMiddleware, type JwtPayload } from "../middleware/auth";
 import { ApiError } from "../middleware/error-handler";
 import type { ApiResponse } from "@hy2-panel/shared";
 
-const AGENT_FETCH_TIMEOUT_MS = 10_000;
+const AGENT_FETCH_TIMEOUT_MS = 30_000;
 
 async function fetchAgent(url: string, init?: RequestInit): Promise<Response> {
   const controller = new AbortController();
@@ -16,6 +16,20 @@ async function fetchAgent(url: string, init?: RequestInit): Promise<Response> {
     return await fetch(url, { ...init, signal: controller.signal });
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+/** Fetch with one retry on timeout/network error (for critical disable flow) */
+async function fetchAgentWithRetry(url: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetchAgent(url, init);
+  } catch (err) {
+    const isRetryable = err instanceof Error && (err.name === "AbortError" || err.name === "TypeError");
+    if (isRetryable) {
+      await new Promise((r) => setTimeout(r, 2000));
+      return fetchAgent(url, init);
+    }
+    throw err;
   }
 }
 
@@ -76,12 +90,12 @@ clientsRoutes.get("/online", async (c) => {
   });
 });
 
-// GET /traffic — aggregate traffic stats (tx, rx in bytes) per client from all servers' agents
+// GET /traffic — aggregate traffic from agents and persist totals (survives Hysteria restart)
 clientsRoutes.get("/traffic", async (c) => {
   const db = await getDb();
   const allServers = await db.query.servers.findMany();
   const allClients = await db.query.clients.findMany();
-  const traffic: Record<string, { tx: number; rx: number }> = {};
+  const apiTraffic: Record<string, { tx: number; rx: number }> = {};
 
   for (const server of allServers) {
     let agentUrl = server.agentUrl;
@@ -97,9 +111,9 @@ clientsRoutes.get("/traffic", async (c) => {
       for (const [name, stats] of Object.entries(data)) {
         const client = allClients.find((cl) => cl.serverId === server.id && cl.name.toLowerCase() === name.toLowerCase());
         if (client) {
-          traffic[client.id] = {
-            tx: (traffic[client.id]?.tx ?? 0) + (stats.tx ?? 0),
-            rx: (traffic[client.id]?.rx ?? 0) + (stats.rx ?? 0),
+          apiTraffic[client.id] = {
+            tx: (apiTraffic[client.id]?.tx ?? 0) + (stats.tx ?? 0),
+            rx: (apiTraffic[client.id]?.rx ?? 0) + (stats.rx ?? 0),
           };
         }
       }
@@ -108,11 +122,37 @@ clientsRoutes.get("/traffic", async (c) => {
     }
   }
 
+  // Persist cumulative totals (detect Hysteria reset when api drops) and build response
+  const traffic: Record<string, { tx: number; rx: number }> = {};
+  const now = new Date();
+
+  for (const client of allClients) {
+    const api = apiTraffic[client.id];
+    let totalTx = Number(client.totalTx);
+    let totalRx = Number(client.totalRx);
+    let lastApiTx = Number(client.lastApiTx);
+    let lastApiRx = Number(client.lastApiRx);
+
+    if (api) {
+      const deltaTx = Math.max(0, api.tx - lastApiTx);
+      const deltaRx = Math.max(0, api.rx - lastApiRx);
+      totalTx += deltaTx;
+      totalRx += deltaRx;
+      lastApiTx = api.tx;
+      lastApiRx = api.rx;
+      await db
+        .update(clients)
+        .set({ totalTx, totalRx, lastApiTx, lastApiRx })
+        .where(eq(clients.id, client.id));
+    }
+
+    traffic[client.id] = { tx: totalTx, rx: totalRx };
+  }
+
   // Save snapshots (throttled: at most once per 5 min per client), keep last 7 days
   try {
     const SNAPSHOT_INTERVAL_MS = 5 * 60 * 1000;
     const RETENTION_DAYS = 7;
-    const now = new Date();
     const cutoff = new Date(now.getTime() - RETENTION_DAYS * 24 * 60 * 60 * 1000);
 
     for (const [clientId, stats] of Object.entries(traffic)) {
@@ -222,6 +262,40 @@ clientsRoutes.patch("/:id", zValidator("json", updateClientSchema), async (c) =>
     throw new ApiError(404, "Client not found");
   }
 
+  // When disabling: remove from config first, then update DB (so user is really removed)
+  if (data.enabled === false) {
+    const server = await db.query.servers.findFirst({
+      where: eq(servers.id, client.serverId),
+    });
+    if (!server) {
+      throw new ApiError(400, "Server not found for this client");
+    }
+    let agentUrl = server.agentUrl;
+    if (!agentUrl.startsWith("http://") && !agentUrl.startsWith("https://")) {
+      agentUrl = `http://${agentUrl}`;
+    }
+    agentUrl = agentUrl.replace(/\/$/, "");
+    const name = client.name;
+    let res: Response;
+    try {
+      res = await fetchAgentWithRetry(`${agentUrl}/clients/${encodeURIComponent(name)}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${server.agentToken}` },
+      });
+    } catch (err) {
+      console.error("Agent request failed (disable):", err);
+      const msg = err instanceof Error && err.name === "AbortError"
+        ? "Agent did not respond within 30 seconds. Check agent URL and network."
+        : "Could not reach agent. Check agent URL and that the agent is running.";
+      throw new ApiError(502, msg);
+    }
+    if (!res.ok) {
+      const body = await res.text();
+      console.error(`Agent DELETE /clients/${name}:`, res.status, body);
+      throw new ApiError(502, res.status === 404 ? "Client not found in server config" : `Agent error: ${res.status}`);
+    }
+  }
+
   await db
     .update(clients)
     .set({
@@ -230,8 +304,8 @@ clientsRoutes.patch("/:id", zValidator("json", updateClientSchema), async (c) =>
     })
     .where(eq(clients.id, id));
 
-  // Sync enable/disable with Hysteria2 config on agent
-  if (data.enabled !== undefined) {
+  // When enabling: update DB first, then add to config in background
+  if (data.enabled === true) {
     const server = await db.query.servers.findFirst({
       where: eq(servers.id, client.serverId),
     });
@@ -244,31 +318,17 @@ clientsRoutes.patch("/:id", zValidator("json", updateClientSchema), async (c) =>
       const updated = await db.query.clients.findFirst({ where: eq(clients.id, id) });
       const name = updated?.name ?? client.name;
       const password = updated?.password ?? client.password;
-      try {
-        if (data.enabled) {
-          const res = await fetchAgent(`${agentUrl}/clients`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${server.agentToken}`,
-            },
-            body: JSON.stringify({ id: name, password }),
-          });
-          if (!res.ok) {
-            console.error(`Agent POST /clients failed for ${name}:`, res.status);
-          }
-        } else {
-          const res = await fetchAgent(`${agentUrl}/clients/${encodeURIComponent(name)}`, {
-            method: "DELETE",
-            headers: { Authorization: `Bearer ${server.agentToken}` },
-          });
-          if (!res.ok && res.status !== 404) {
-            console.error(`Agent DELETE /clients/${name} failed:`, res.status);
-          }
-        }
-      } catch (err) {
-        console.error("Agent request failed (enable/disable):", err);
-      }
+      const token = server.agentToken;
+      void fetchAgentWithRetry(`${agentUrl}/clients`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ id: name, password }),
+      }).then((res) => {
+        if (!res.ok) console.error(`Agent POST /clients failed for ${name}:`, res.status);
+      }).catch((err) => console.error("Agent request failed (enable):", err));
     }
   }
 

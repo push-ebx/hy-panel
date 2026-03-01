@@ -13,6 +13,7 @@ import (
 
 	"github.com/hy2-panel/agent/internal/config"
 	"github.com/hy2-panel/agent/internal/hysteria"
+	"github.com/hy2-panel/agent/internal/system"
 )
 
 func main() {
@@ -184,6 +185,18 @@ func main() {
 
 		log.Printf("Removed client %q from config and restarted service", id)
 		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	// System stats (CPU, RAM, swap, disk)
+	mux.HandleFunc("GET /system", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		stats, err := system.Collect("")
+		if err != nil {
+			log.Printf("System stats failed: %v", err)
+			http.Error(w, "Failed to collect system stats", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(stats)
 	}))
 
 	// Health check

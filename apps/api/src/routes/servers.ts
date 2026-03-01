@@ -80,22 +80,44 @@ serversRoutes.post("/sync", async (c) => {
         clients: Array<{ id: string; password: string }>;
       };
 
-      // Delete existing clients for this server
-      await db.delete(clients).where(eq(clients.serverId, server.id));
+      const configNamesLower = new Set(data.clients.map((c) => c.id.toLowerCase()));
+      const existingDbClients = await db.query.clients.findMany({
+        where: eq(clients.serverId, server.id),
+      });
 
-      // Import all clients from config
+      // Upsert: in config → update or insert, set enabled=true
       for (const client of data.clients) {
-        await db.insert(clients).values({
-          id: crypto.randomUUID(),
-          userId: user.sub,
-          serverId: server.id,
-          name: client.id,
-          password: client.password,
-          uploadLimit: 0,
-          downloadLimit: 0,
-          totalLimit: 0,
-        });
-        totalImported++;
+        const existing = existingDbClients.find(
+          (c) => c.name.toLowerCase() === client.id.toLowerCase()
+        );
+        if (existing) {
+          await db
+            .update(clients)
+            .set({ password: client.password, enabled: true })
+            .where(eq(clients.id, existing.id));
+        } else {
+          await db.insert(clients).values({
+            id: crypto.randomUUID(),
+            userId: user.sub,
+            serverId: server.id,
+            name: client.id,
+            password: client.password,
+            uploadLimit: 0,
+            downloadLimit: 0,
+            totalLimit: 0,
+          });
+          totalImported++;
+        }
+      }
+
+      // In DB but not in config → set enabled=false (client remains in panel, marked disabled)
+      for (const dbClient of existingDbClients) {
+        if (!configNamesLower.has(dbClient.name.toLowerCase())) {
+          await db
+            .update(clients)
+            .set({ enabled: false })
+            .where(eq(clients.id, dbClient.id));
+        }
       }
 
       await db.update(servers).set({ status: "online" }).where(eq(servers.id, server.id));
@@ -110,6 +132,72 @@ serversRoutes.post("/sync", async (c) => {
     success: true,
     data: { servers: successCount, clients: totalImported },
     message: `Synced ${successCount}/${allServers.length} servers, imported ${totalImported} clients`,
+  });
+});
+
+// System stats from each agent (GET /system) — CPU, RAM, swap, disk per server
+serversRoutes.get("/system-stats", async (c) => {
+  const db = await getDb();
+  const allServers = await db.query.servers.findMany();
+  const result: Array<{
+    serverId: string;
+    serverName: string;
+    status: string;
+    error?: string;
+    cpuPercent?: number;
+    ram?: { usedBytes: number; totalBytes: number; usedPercent: number };
+    swap?: { usedBytes: number; totalBytes: number; usedPercent: number };
+    disk?: { usedBytes: number; totalBytes: number; usedPercent: number };
+  }> = [];
+
+  for (const server of allServers) {
+    let agentUrl = server.agentUrl;
+    if (!agentUrl.startsWith("http://") && !agentUrl.startsWith("https://")) {
+      agentUrl = `http://${agentUrl}`;
+    }
+    agentUrl = agentUrl.replace(/\/$/, "");
+
+    try {
+      const res = await fetch(`${agentUrl}/system`, {
+        headers: { Authorization: `Bearer ${server.agentToken}` },
+      });
+      if (!res.ok) {
+        result.push({
+          serverId: server.id,
+          serverName: server.name,
+          status: server.status ?? "unknown",
+          error: `Agent returned ${res.status}`,
+        });
+        continue;
+      }
+      const data = (await res.json()) as {
+        cpuPercent: number;
+        ram: { usedBytes: number; totalBytes: number; usedPercent: number };
+        swap: { usedBytes: number; totalBytes: number; usedPercent: number };
+        disk: { usedBytes: number; totalBytes: number; usedPercent: number };
+      };
+      result.push({
+        serverId: server.id,
+        serverName: server.name,
+        status: server.status ?? "unknown",
+        cpuPercent: data.cpuPercent,
+        ram: data.ram,
+        swap: data.swap,
+        disk: data.disk,
+      });
+    } catch (err) {
+      result.push({
+        serverId: server.id,
+        serverName: server.name,
+        status: server.status ?? "unknown",
+        error: err instanceof Error ? err.message : "Request failed",
+      });
+    }
+  }
+
+  return c.json<ApiResponse>({
+    success: true,
+    data: result,
   });
 });
 

@@ -15,6 +15,10 @@ export const clients = mysqlTable("clients", {
   totalLimit: bigint("total_limit", { mode: "number" }).notNull().default(0),
   expiresAt: timestamp("expires_at"),
   enabled: boolean("enabled").notNull().default(true),
+  totalTx: bigint("total_tx", { mode: "number" }).notNull().default(0),
+  totalRx: bigint("total_rx", { mode: "number" }).notNull().default(0),
+  lastApiTx: bigint("last_api_tx", { mode: "number" }).notNull().default(0),
+  lastApiRx: bigint("last_api_rx", { mode: "number" }).notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
 });

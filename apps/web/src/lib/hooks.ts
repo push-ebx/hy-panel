@@ -73,6 +73,25 @@ export function useCheckServersStatus() {
   });
 }
 
+export type ServerSystemStats = Array<{
+  serverId: string;
+  serverName: string;
+  status: string;
+  error?: string;
+  cpuPercent?: number;
+  ram?: { usedBytes: number; totalBytes: number; usedPercent: number };
+  swap?: { usedBytes: number; totalBytes: number; usedPercent: number };
+  disk?: { usedBytes: number; totalBytes: number; usedPercent: number };
+}>;
+
+export function useServerSystemStats(refetchIntervalMs = 30_000) {
+  return useQuery({
+    queryKey: ["servers", "system-stats"],
+    queryFn: () => api.get<ServerSystemStats>("/api/servers/system-stats"),
+    refetchInterval: refetchIntervalMs,
+  });
+}
+
 // ============ Clients ============
 
 export function useClients() {

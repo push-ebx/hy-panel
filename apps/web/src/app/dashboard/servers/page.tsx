@@ -76,9 +76,9 @@ export default function ServersPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Servers</h1>
-        <div className="flex gap-2">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-2xl font-bold md:text-3xl">Servers</h1>
+        <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
             onClick={() => checkStatus.mutate()}
@@ -198,7 +198,8 @@ export default function ServersPage() {
           ) : servers?.length === 0 ? (
             <p className="text-muted-foreground">No servers yet. Add your first server.</p>
           ) : (
-            <Table>
+            <div className="overflow-x-auto -mx-1">
+            <Table className="min-w-[600px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
@@ -229,6 +230,7 @@ export default function ServersPage() {
                 ))}
               </TableBody>
             </Table>
+            </div>
           )}
         </CardContent>
       </Card>

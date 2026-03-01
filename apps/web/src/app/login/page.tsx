@@ -33,11 +33,11 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center">
+    <div className="relative flex min-h-screen items-center justify-center px-4">
       <div className="absolute right-4 top-4">
         <ThemeToggle />
       </div>
-      <Card className="w-full max-w-md">
+      <Card className="w-full max-w-md mx-auto">
         <CardHeader>
           <CardTitle className="text-2xl text-center">Hysteria2 Panel</CardTitle>
         </CardHeader>

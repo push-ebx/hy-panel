@@ -94,6 +94,7 @@ export default function ClientsPage() {
   const [copied, setCopied] = useState(false);
   const [copiedClientId, setCopiedClientId] = useState<string | null>(null);
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
+  const [togglingClientId, setTogglingClientId] = useState<string | null>(null);
 
   const detailClient = clients?.find((c) => c.id === detailClientId);
   const { data: trafficHistory = [] } = useClientTrafficHistory(detailClientId, trafficHistoryHours);
@@ -126,7 +127,16 @@ export default function ClientsPage() {
   };
 
   const toggleEnabled = (clientId: string, enabled: boolean) => {
-    updateClient.mutate({ id: clientId, data: { enabled: !enabled } });
+    setTogglingClientId(clientId);
+    updateClient.mutate(
+      { id: clientId, data: { enabled: !enabled } },
+      {
+        onSettled: () => setTogglingClientId(null),
+        onError: (err) => {
+          alert(err instanceof Error ? err.message : "Failed to update client");
+        },
+      }
+    );
   };
 
   const toggleShowPassword = (clientId: string) => {
@@ -136,6 +146,29 @@ export default function ClientsPage() {
   const getServerName = (serverId: string) => {
     return servers?.find((s) => s.id === serverId)?.name ?? "Unknown";
   };
+
+  // Group clients by server (order: servers list, then Unknown)
+  const clientsByServer = useMemo(() => {
+    if (!clients?.length) return [];
+    const byId: Record<string, typeof clients> = {};
+    for (const c of clients) {
+      if (!byId[c.serverId]) byId[c.serverId] = [];
+      byId[c.serverId].push(c);
+    }
+    const serverIds = [...new Set(clients.map((c) => c.serverId))];
+    const order = servers?.length
+      ? [...servers.map((s) => s.id), ...serverIds.filter((id) => !servers.find((s) => s.id === id))]
+      : serverIds;
+    const seen = new Set<string>();
+    const result: { serverId: string; name: string; clients: typeof clients }[] = [];
+    for (const id of order) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const list = byId[id];
+      if (list?.length) result.push({ serverId: id, name: getServerName(id), clients: list });
+    }
+    return result;
+  }, [clients, servers]);
 
   const formatBytes = (bytes: number) => {
     if (bytes === 0) return "0 B";
@@ -181,8 +214,8 @@ export default function ClientsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Clients</h1>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-2xl font-bold md:text-3xl">Clients</h1>
         <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
           <DialogTrigger asChild>
             <Button>
@@ -301,8 +334,13 @@ export default function ClientsPage() {
       </Dialog>
 
       <Card>
-        <CardHeader>
-          <CardTitle>All Clients</CardTitle>
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
+          <div>
+            <CardTitle>Clients</CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              {isLoading ? "…" : clients?.length === 0 ? "No clients" : `${clients.length} client${clients.length === 1 ? "" : "s"}${clientsByServer.length > 0 ? ` · ${clientsByServer.length} server${clientsByServer.length === 1 ? "" : "s"}` : ""}`}
+            </p>
+          </div>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -310,101 +348,111 @@ export default function ClientsPage() {
           ) : clients?.length === 0 ? (
             <p className="text-muted-foreground">No clients yet. Sync servers or add a client manually.</p>
           ) : (
-            <Table className="table-fixed">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[100px]">Name</TableHead>
-                  <TableHead className="w-[100px]">Server</TableHead>
-                  <TableHead className="w-[80px]">Online</TableHead>
-                  <TableHead className="w-[120px]">Total</TableHead>
-                  <TableHead className="w-[160px]">↑ Tx / ↓ Rx</TableHead>
-                  <TableHead className="w-[140px]">Password</TableHead>
-                  <TableHead className="w-[90px] text-center">Status</TableHead>
-                  <TableHead className="w-[100px] text-center">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {clients?.map((client) => (
-                  <TableRow
-                    key={client.id}
-                    className="cursor-pointer"
-                    onClick={() => setDetailClientId(client.id)}
-                  >
-                    <TableCell className="font-medium truncate align-middle">{client.name}</TableCell>
-                    <TableCell className="truncate align-middle">{getServerName(client.serverId)}</TableCell>
-                    <TableCell className="align-middle">
-                      {onlineSet.has(client.id) ? (
-                        <Badge variant="success" className="font-normal">Online</Badge>
-                      ) : (
-                        <Badge variant="secondary" className="font-normal">Offline</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground whitespace-nowrap align-middle tabular-nums">
-                      {traffic[client.id] ? formatBytes(traffic[client.id].tx + traffic[client.id].rx) : "—"}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground whitespace-nowrap align-middle tabular-nums">
-                      {traffic[client.id] ? (
-                        <span title={`↑ ${traffic[client.id].tx} B / ↓ ${traffic[client.id].rx} B`}>
-                          ↑ {formatBytes(traffic[client.id].tx)} / ↓ {formatBytes(traffic[client.id].rx)}
-                        </span>
-                      ) : (
-                        "—"
-                      )}
-                    </TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()} className="align-middle">
-                      <div className="flex items-center gap-1 min-w-0 w-[120px]">
-                        <code className="text-sm truncate block w-[72px]" title={showPasswords[client.id] ? client.password : undefined}>
-                          {showPasswords[client.id] ? client.password : "••••••••"}
-                        </code>
-                        <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => toggleShowPassword(client.id)}>
-                          {showPasswords[client.id] ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 shrink-0"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleCopyClientPassword(client.id, client.password);
-                          }}
-                        >
-                          {copiedClientId === client.id ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
-                        </Button>
-                      </div>
-                    </TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()} className="align-middle">
-                      <div className="flex justify-center">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleEnabled(client.id, client.enabled);
-                        }}
-                        disabled={updateClient.isPending && (updateClient.variables as { id?: string })?.id === client.id}
-                      >
-                        {client.enabled ? (
-                          <Badge variant="success">Enabled</Badge>
-                        ) : (
-                          <Badge variant="secondary">Disabled</Badge>
-                        )}
-                      </Button>
-                      </div>
-                    </TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()} className="align-middle">
-                      <div className="flex items-center gap-1 justify-center">
-                        <Button variant="ghost" size="icon" onClick={() => handleDownloadConfig(client.id, client.name)} title="Download Clash config">
-                          <Download className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => deleteClient.mutate(client.id)} disabled={deleteClient.isPending} title="Delete">
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <div className="space-y-6">
+              {clientsByServer.map(({ serverId, name, clients: groupClients }) => (
+                <div key={serverId}>
+                  <h3 className="text-sm font-semibold text-muted-foreground mb-2 flex items-center gap-2">
+                    <span>{name}</span>
+                    <span className="font-normal">({groupClients.length})</span>
+                  </h3>
+                  <div className="overflow-x-auto -mx-1">
+                    <Table className="table-fixed min-w-[700px]">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[100px]">Name</TableHead>
+                          <TableHead className="w-[80px] pl-6">Online</TableHead>
+                          <TableHead className="w-[120px]">Total</TableHead>
+                          <TableHead className="w-[200px]">↑ Tx / ↓ Rx</TableHead>
+                          <TableHead className="w-[140px]">Password</TableHead>
+                          <TableHead className="w-[90px] text-center">Status</TableHead>
+                          <TableHead className="w-[100px] text-center">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {groupClients.map((client) => (
+                          <TableRow
+                            key={client.id}
+                            className="cursor-pointer"
+                            onClick={() => setDetailClientId(client.id)}
+                          >
+                            <TableCell className="font-medium truncate align-middle">{client.name}</TableCell>
+                            <TableCell className="align-middle">
+                              {onlineSet.has(client.id) ? (
+                                <Badge variant="success" className="font-normal">Online</Badge>
+                              ) : (
+                                <Badge variant="secondary" className="font-normal">Offline</Badge>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground whitespace-nowrap align-middle tabular-nums">
+                              {traffic[client.id] ? formatBytes(traffic[client.id].tx + traffic[client.id].rx) : "—"}
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground whitespace-nowrap align-middle tabular-nums">
+                              {traffic[client.id] ? (
+                                <span title={`↑ ${traffic[client.id].tx} B / ↓ ${traffic[client.id].rx} B`}>
+                                  ↑ {formatBytes(traffic[client.id].tx)} / ↓ {formatBytes(traffic[client.id].rx)}
+                                </span>
+                              ) : (
+                                "—"
+                              )}
+                            </TableCell>
+                            <TableCell onClick={(e) => e.stopPropagation()} className="align-middle">
+                              <div className="flex items-center gap-1 min-w-0 w-[120px]">
+                                <code className="text-sm truncate block w-[72px]" title={showPasswords[client.id] ? client.password : undefined}>
+                                  {showPasswords[client.id] ? client.password : "••••••••"}
+                                </code>
+                                <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => toggleShowPassword(client.id)}>
+                                  {showPasswords[client.id] ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 shrink-0"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleCopyClientPassword(client.id, client.password);
+                                  }}
+                                >
+                                  {copiedClientId === client.id ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+                                </Button>
+                              </div>
+                            </TableCell>
+                            <TableCell onClick={(e) => e.stopPropagation()} className="align-middle">
+                              <div className="flex justify-center">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleEnabled(client.id, client.enabled);
+                                  }}
+                                  disabled={togglingClientId === client.id}
+                                >
+                                  {client.enabled ? (
+                                    <Badge variant="success">Enabled</Badge>
+                                  ) : (
+                                    <Badge variant="secondary">Disabled</Badge>
+                                  )}
+                                </Button>
+                              </div>
+                            </TableCell>
+                            <TableCell onClick={(e) => e.stopPropagation()} className="align-middle">
+                              <div className="flex items-center gap-1 justify-center">
+                                <Button variant="ghost" size="icon" onClick={() => handleDownloadConfig(client.id, client.name)} title="Download Clash config">
+                                  <Download className="h-4 w-4" />
+                                </Button>
+                                <Button variant="ghost" size="icon" onClick={() => deleteClient.mutate(client.id)} disabled={deleteClient.isPending} title="Delete">
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </CardContent>
       </Card>
