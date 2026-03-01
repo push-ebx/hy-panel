@@ -3,6 +3,7 @@ package hysteria
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"sync"
 
 	"gopkg.in/yaml.v3"
@@ -142,5 +143,69 @@ func (m *Manager) AddClient(id, password string) error {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 
+	return m.restartService()
+}
+
+// RemoveClient removes a client from the Hysteria2 config (auth.userpass) and writes the file back.
+func (m *Manager) RemoveClient(id string) error {
+	if id == "" {
+		return fmt.Errorf("id is required")
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	data, err := os.ReadFile(m.configPath)
+	if err != nil {
+		return fmt.Errorf("failed to read config: %w", err)
+	}
+
+	var raw map[interface{}]interface{}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("failed to parse config: %w", err)
+	}
+
+	cfg, _ := toStrMap(raw).(map[string]interface{})
+	if cfg == nil {
+		return fmt.Errorf("config is empty")
+	}
+
+	auth, _ := cfg["auth"].(map[string]interface{})
+	if auth == nil {
+		return fmt.Errorf("auth section not found")
+	}
+
+	userpass, _ := auth["userpass"].(map[string]interface{})
+	if userpass == nil {
+		return fmt.Errorf("user not found")
+	}
+
+	if _, ok := userpass[id]; !ok {
+		return fmt.Errorf("user not found")
+	}
+
+	delete(userpass, id)
+
+	out, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	if err := os.WriteFile(m.configPath, out, 0644); err != nil {
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+
+	return m.restartService()
+}
+
+// restartService runs systemctl restart for the Hysteria2 service. No-op if serviceName is empty.
+func (m *Manager) restartService() error {
+	if m.serviceName == "" {
+		return nil
+	}
+	cmd := exec.Command("systemctl", "restart", m.serviceName)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("systemctl restart %s: %w: %s", m.serviceName, err, string(out))
+	}
 	return nil
 }

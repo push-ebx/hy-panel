@@ -80,6 +80,14 @@ export function useClient(id: string) {
   });
 }
 
+export function useOnlineClients(refetchInterval = 15000) {
+  return useQuery({
+    queryKey: ["clients", "online"],
+    queryFn: () => api.get<{ online: string[] }>("/api/clients/online"),
+    refetchInterval,
+  });
+}
+
 export function useCreateClient() {
   const queryClient = useQueryClient();
   return useMutation({

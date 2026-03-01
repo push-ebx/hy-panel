@@ -16,6 +16,9 @@ go build -o agent .
 PORT=8080
 AGENT_TOKEN=токен-из-панели
 HY2_CONFIG_PATH=/etc/hysteria/config.yaml
+HY2_SERVICE_NAME=hysteria-server
+HY2_API_URL=http://127.0.0.1:9999
+HY2_API_SECRET=your-traffic-stats-secret
 ```
 
 | Переменная | Описание | По умолчанию |
@@ -23,6 +26,9 @@ HY2_CONFIG_PATH=/etc/hysteria/config.yaml
 | `PORT` | Порт HTTP сервера | `8080` |
 | `AGENT_TOKEN` | Токен авторизации (получить при создании сервера в панели) | — |
 | `HY2_CONFIG_PATH` | Путь к конфигу Hysteria2 | `/etc/hysteria/config.yaml` |
+| `HY2_SERVICE_NAME` | Имя systemd-сервиса для перезапуска после изменения конфига (`systemctl restart …`). Пусто — перезапуск не выполняется | `hysteria-server` |
+| `HY2_API_URL` | Базовый URL Hysteria2 Traffic Stats API (например `http://127.0.0.1:9999`). Нужен для отображения онлайна клиентов в панели | — |
+| `HY2_API_SECRET` | Секрет из секции `trafficStats.secret` конфига Hysteria2; передаётся в заголовке `Authorization` при запросе к API | — |
 
 ## Запуск
 
@@ -79,7 +85,31 @@ curl -X POST http://localhost:8080/clients \
 { "id": "user1", "password": "secret123" }
 ```
 
-Файл конфига перезаписывается; при отсутствии секции `auth` или `auth.userpass` она создаётся.
+Файл конфига перезаписывается; при отсутствии секции `auth` или `auth.userpass` она создаётся. После записи выполняется `systemctl restart HY2_SERVICE_NAME`.
+
+### GET /online
+Прокси к Hysteria2 Traffic Stats API: возвращает список онлайн-клиентов (имя → количество подключений). Для работы нужен `HY2_API_URL` в конфиге агента; в конфиге Hysteria2 должна быть включена секция `trafficStats` (listen и при необходимости secret).
+
+Требует заголовок: `Authorization: Bearer AGENT_TOKEN`
+
+Ответ (как у Hysteria2 GET /online):
+```json
+{ "user1": 2, "user2": 1 }
+```
+
+Если `HY2_API_URL` не задан, возвращается пустой объект.
+
+### DELETE /clients/{id}
+Удаляет клиента из конфига Hysteria2 (auth.userpass). `{id}` — имя пользователя (логин).
+
+Требует заголовок: `Authorization: Bearer AGENT_TOKEN`
+
+```bash
+curl -X DELETE "http://localhost:8080/clients/user1" \
+  -H "Authorization: Bearer your-token"
+```
+
+Ответ: `204 No Content`. После изменения конфига выполняется перезапуск сервиса.
 
 ### GET /health
 Проверка работоспособности.
@@ -133,6 +163,9 @@ RestartSec=5
 Environment=PORT=8080
 Environment=AGENT_TOKEN=your-token-here
 Environment=HY2_CONFIG_PATH=/etc/hysteria/config.yaml
+Environment=HY2_SERVICE_NAME=hysteria-server
+Environment=HY2_API_URL=http://127.0.0.1:9999
+Environment=HY2_API_SECRET=your-traffic-stats-secret
 
 [Install]
 WantedBy=multi-user.target

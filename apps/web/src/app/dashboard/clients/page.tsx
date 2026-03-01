@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Trash2, Copy, Check, Eye, EyeOff } from "lucide-react";
+import { Plus, Trash2, Copy, Check, Eye, EyeOff, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -24,11 +24,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useClients, useServers, useCreateClient, useDeleteClient, useUpdateClient } from "@/lib/hooks";
+import { useClients, useServers, useCreateClient, useDeleteClient, useUpdateClient, useOnlineClients } from "@/lib/hooks";
+import { api } from "@/lib/api";
 
 export default function ClientsPage() {
   const { data: clients, isLoading } = useClients();
   const { data: servers } = useServers();
+  const { data: onlineData } = useOnlineClients(15000);
+  const onlineSet = new Set(onlineData?.online ?? []);
   const createClient = useCreateClient();
   const deleteClient = useDeleteClient();
   const updateClient = useUpdateClient();
@@ -70,6 +73,16 @@ export default function ClientsPage() {
 
   const getServerName = (serverId: string) => {
     return servers?.find((s) => s.id === serverId)?.name ?? "Unknown";
+  };
+
+  const handleDownloadConfig = async (clientId: string, clientName: string) => {
+    const blob = await api.getBlob(`/api/clients/${clientId}/export?format=clash`);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `clash-${clientName}.yaml`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -180,9 +193,10 @@ export default function ClientsPage() {
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Server</TableHead>
+                  <TableHead>Online</TableHead>
                   <TableHead>Password</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead className="w-[100px]">Actions</TableHead>
+                  <TableHead className="w-[140px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -190,6 +204,13 @@ export default function ClientsPage() {
                   <TableRow key={client.id}>
                     <TableCell className="font-medium">{client.name}</TableCell>
                     <TableCell>{getServerName(client.serverId)}</TableCell>
+                    <TableCell>
+                      {onlineSet.has(client.id) ? (
+                        <Badge variant="success" className="font-normal">Online</Badge>
+                      ) : (
+                        <span className="text-muted-foreground text-sm">Offline</span>
+                      )}
+                    </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <code className="text-sm">
@@ -232,14 +253,25 @@ export default function ClientsPage() {
                       </Button>
                     </TableCell>
                     <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => deleteClient.mutate(client.id)}
-                        disabled={deleteClient.isPending}
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDownloadConfig(client.id, client.name)}
+                          title="Download Clash config"
+                        >
+                          <Download className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => deleteClient.mutate(client.id)}
+                          disabled={deleteClient.isPending}
+                          title="Delete"
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

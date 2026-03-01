@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -79,13 +80,71 @@ func main() {
 			return
 		}
 
-		log.Printf("Added client %q to config", body.ID)
+		log.Printf("Added client %q to config and restarted service", body.ID)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"id":       body.ID,
 			"password": body.Password,
 		})
+	}))
+
+	// Online clients from Hysteria2 Traffic Stats API (GET /online)
+	mux.HandleFunc("GET /online", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		if cfg.Hy2ApiUrl == "" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]int{})
+			return
+		}
+
+		req, err := http.NewRequest(http.MethodGet, cfg.Hy2ApiUrl+"/online", nil)
+		if err != nil {
+			http.Error(w, "Failed to build request", http.StatusInternalServerError)
+			return
+		}
+		if cfg.Hy2ApiSecret != "" {
+			req.Header.Set("Authorization", cfg.Hy2ApiSecret)
+		}
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			log.Printf("Hy2 API /online request failed: %v", err)
+			http.Error(w, "Failed to fetch online status", http.StatusBadGateway)
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			log.Printf("Hy2 API /online returned %d: %s", resp.StatusCode, string(body))
+			http.Error(w, "Upstream error", resp.StatusCode)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		io.Copy(w, resp.Body)
+	}))
+
+	// Delete client from config (remove from auth.userpass)
+	mux.HandleFunc("DELETE /clients/{id}", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		if id == "" {
+			http.Error(w, "id is required", http.StatusBadRequest)
+			return
+		}
+
+		if err := hy2Manager.RemoveClient(id); err != nil {
+			log.Printf("RemoveClient failed: %v", err)
+			status := http.StatusInternalServerError
+			if err.Error() == "user not found" {
+				status = http.StatusNotFound
+			}
+			http.Error(w, err.Error(), status)
+			return
+		}
+
+		log.Printf("Removed client %q from config and restarted service", id)
+		w.WriteHeader(http.StatusNoContent)
 	}))
 
 	// Health check

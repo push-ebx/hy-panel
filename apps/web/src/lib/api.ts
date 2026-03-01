@@ -57,6 +57,20 @@ class ApiClient {
   delete<T>(endpoint: string) {
     return this.request<T>(endpoint, { method: "DELETE" });
   }
+
+  /** Fetch raw blob (e.g. for file download). Does not parse JSON. */
+  async getBlob(endpoint: string): Promise<Blob> {
+    const headers: HeadersInit = {
+      ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
+    };
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+    const response = await fetch(`${API_URL}${endpoint}`, { headers });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error((err as { error?: string }).error || `Request failed: ${response.status}`);
+    }
+    return response.blob();
+  }
 }
 
 export const api = new ApiClient();
