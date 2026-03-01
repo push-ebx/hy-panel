@@ -7,6 +7,18 @@ import { authMiddleware, type JwtPayload } from "../middleware/auth";
 import { ApiError } from "../middleware/error-handler";
 import type { ApiResponse } from "@hy2-panel/shared";
 
+const AGENT_FETCH_TIMEOUT_MS = 10_000;
+
+async function fetchAgent(url: string, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), AGENT_FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 const createClientSchema = z.object({
   serverId: z.string().uuid(),
   name: z.string().min(1).max(255),
@@ -171,7 +183,7 @@ clientsRoutes.post("/", zValidator("json", createClientSchema), async (c) => {
       agentUrl = `http://${agentUrl}`;
     }
     try {
-      const res = await fetch(`${agentUrl.replace(/\/$/, "")}/clients`, {
+      const res = await fetchAgent(`${agentUrl.replace(/\/$/, "")}/clients`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -217,6 +229,48 @@ clientsRoutes.patch("/:id", zValidator("json", updateClientSchema), async (c) =>
       expiresAt: data.expiresAt === null ? null : data.expiresAt ? new Date(data.expiresAt) : undefined,
     })
     .where(eq(clients.id, id));
+
+  // Sync enable/disable with Hysteria2 config on agent
+  if (data.enabled !== undefined) {
+    const server = await db.query.servers.findFirst({
+      where: eq(servers.id, client.serverId),
+    });
+    if (server) {
+      let agentUrl = server.agentUrl;
+      if (!agentUrl.startsWith("http://") && !agentUrl.startsWith("https://")) {
+        agentUrl = `http://${agentUrl}`;
+      }
+      agentUrl = agentUrl.replace(/\/$/, "");
+      const updated = await db.query.clients.findFirst({ where: eq(clients.id, id) });
+      const name = updated?.name ?? client.name;
+      const password = updated?.password ?? client.password;
+      try {
+        if (data.enabled) {
+          const res = await fetchAgent(`${agentUrl}/clients`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${server.agentToken}`,
+            },
+            body: JSON.stringify({ id: name, password }),
+          });
+          if (!res.ok) {
+            console.error(`Agent POST /clients failed for ${name}:`, res.status);
+          }
+        } else {
+          const res = await fetchAgent(`${agentUrl}/clients/${encodeURIComponent(name)}`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${server.agentToken}` },
+          });
+          if (!res.ok && res.status !== 404) {
+            console.error(`Agent DELETE /clients/${name} failed:`, res.status);
+          }
+        }
+      } catch (err) {
+        console.error("Agent request failed (enable/disable):", err);
+      }
+    }
+  }
 
   return c.json<ApiResponse>({
     success: true,
@@ -467,7 +521,7 @@ clientsRoutes.delete("/:id", async (c) => {
       agentUrl = `http://${agentUrl}`;
     }
     try {
-      await fetch(`${agentUrl.replace(/\/$/, "")}/clients/${encodeURIComponent(client.name)}`, {
+      await fetchAgent(`${agentUrl.replace(/\/$/, "")}/clients/${encodeURIComponent(client.name)}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${server.agentToken}` },
       });

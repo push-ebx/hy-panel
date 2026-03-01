@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 
 	"gopkg.in/yaml.v3"
@@ -180,11 +181,19 @@ func (m *Manager) RemoveClient(id string) error {
 		return fmt.Errorf("user not found")
 	}
 
-	if _, ok := userpass[id]; !ok {
+	// Case-insensitive lookup (panel may send different casing than config)
+	var foundKey string
+	for k := range userpass {
+		if strings.EqualFold(k, id) {
+			foundKey = k
+			break
+		}
+	}
+	if foundKey == "" {
 		return fmt.Errorf("user not found")
 	}
 
-	delete(userpass, id)
+	delete(userpass, foundKey)
 
 	out, err := yaml.Marshal(cfg)
 	if err != nil {

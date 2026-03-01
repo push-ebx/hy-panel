@@ -377,8 +377,11 @@ export default function ClientsPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => toggleEnabled(client.id, client.enabled)}
-                        disabled={updateClient.isPending}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleEnabled(client.id, client.enabled);
+                        }}
+                        disabled={updateClient.isPending && (updateClient.variables as { id?: string })?.id === client.id}
                       >
                         {client.enabled ? (
                           <Badge variant="success">Enabled</Badge>
