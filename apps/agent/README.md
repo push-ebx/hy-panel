@@ -95,16 +95,24 @@ curl http://localhost:8080/health
 
 ## Формат конфига Hysteria2
 
-Агент читает секцию `auth.userpass` из YAML конфига:
+Агент читает и при POST /clients дополняет секцию `auth.userpass`. Остальные поля (`listen`, `tls` и т.д.) не изменяются.
+
+Пример конфига:
 
 ```yaml
+listen: 0.0.0.0:443
+
+tls:
+  cert: /etc/hysteria/certs/fullchain.pem
+  key: /etc/hysteria/certs/privkey.pem
+
 auth:
   type: userpass
   userpass:
-    user1: password1
-    user2: password2
-    user3: password3
+    Admin: b41b908e4f59bc52cece90c3615205b3
 ```
+
+После вызова POST /clients с новым пользователем он будет добавлен в `auth.userpass`; структура и порядок остальных секций сохраняются.
 
 ## Systemd сервис
 

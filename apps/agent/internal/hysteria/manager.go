@@ -62,6 +62,31 @@ func (m *Manager) ReadClients() ([]ClientConfig, error) {
 	return clients, nil
 }
 
+// toStrMap converts map[interface{}]interface{} (from yaml.Unmarshal) to map[string]interface{}
+// so that yaml.Marshal emits all keys correctly. Recurses into nested maps and slices.
+func toStrMap(v interface{}) interface{} {
+	switch x := v.(type) {
+	case map[interface{}]interface{}:
+		out := make(map[string]interface{}, len(x))
+		for k, val := range x {
+			key, ok := k.(string)
+			if !ok {
+				key = fmt.Sprint(k)
+			}
+			out[key] = toStrMap(val)
+		}
+		return out
+	case []interface{}:
+		out := make([]interface{}, len(x))
+		for i, val := range x {
+			out[i] = toStrMap(val)
+		}
+		return out
+	default:
+		return v
+	}
+}
+
 // AddClient adds or updates a client in the Hysteria2 config (auth.userpass) and writes the file back.
 func (m *Manager) AddClient(id, password string) error {
 	if id == "" || password == "" {
@@ -81,28 +106,34 @@ func (m *Manager) AddClient(id, password string) error {
 		return fmt.Errorf("failed to parse config: %w", err)
 	}
 
-	auth, _ := raw["auth"].(map[interface{}]interface{})
+	// Convert to map[string]interface{} so Marshal won't drop keys
+	cfg, _ := toStrMap(raw).(map[string]interface{})
+	if cfg == nil {
+		cfg = make(map[string]interface{})
+	}
+
+	auth, _ := cfg["auth"].(map[string]interface{})
 	if auth == nil {
-		auth = map[interface{}]interface{}{
-			"type": "userpass",
-			"userpass": map[interface{}]interface{}{},
+		auth = map[string]interface{}{
+			"type":     "userpass",
+			"userpass": map[string]interface{}{},
 		}
-		raw["auth"] = auth
+		cfg["auth"] = auth
 	}
 
 	if auth["type"] == nil {
 		auth["type"] = "userpass"
 	}
 
-	userpass, _ := auth["userpass"].(map[interface{}]interface{})
+	userpass, _ := auth["userpass"].(map[string]interface{})
 	if userpass == nil {
-		userpass = make(map[interface{}]interface{})
+		userpass = make(map[string]interface{})
 		auth["userpass"] = userpass
 	}
 
 	userpass[id] = password
 
-	out, err := yaml.Marshal(raw)
+	out, err := yaml.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
