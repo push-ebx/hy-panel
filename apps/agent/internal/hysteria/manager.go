@@ -3,7 +3,6 @@ package hysteria
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"sync"
 
 	"gopkg.in/yaml.v3"
@@ -61,55 +60,4 @@ func (m *Manager) ReadClients() ([]ClientConfig, error) {
 	}
 
 	return clients, nil
-}
-
-func (m *Manager) SyncClients(clients []ClientConfig) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	// Build userpass auth map for YAML
-	userPass := make(map[string]string)
-	for _, client := range clients {
-		if client.Enabled {
-			userPass[client.ID] = client.Password
-		}
-	}
-
-	// Read existing config
-	data, err := os.ReadFile(m.configPath)
-	if err != nil {
-		return fmt.Errorf("failed to read config: %w", err)
-	}
-
-	var config map[string]interface{}
-	if err := yaml.Unmarshal(data, &config); err != nil {
-		return fmt.Errorf("failed to parse config: %w", err)
-	}
-
-	// Update auth section
-	config["auth"] = map[string]interface{}{
-		"type":     "userpass",
-		"userpass": userPass,
-	}
-
-	// Write back
-	newData, err := yaml.Marshal(config)
-	if err != nil {
-		return fmt.Errorf("failed to marshal config: %w", err)
-	}
-
-	if err := os.WriteFile(m.configPath, newData, 0600); err != nil {
-		return fmt.Errorf("failed to write config: %w", err)
-	}
-
-	return m.reload()
-}
-
-func (m *Manager) reload() error {
-	cmd := exec.Command("systemctl", "restart", m.serviceName)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("restart failed: %s", string(output))
-	}
-	return nil
 }

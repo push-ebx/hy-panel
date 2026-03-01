@@ -14,10 +14,6 @@ import (
 	"github.com/hy2-panel/agent/internal/hysteria"
 )
 
-type SyncRequest struct {
-	Clients []hysteria.ClientConfig `json:"clients"`
-}
-
 func main() {
 	_ = godotenv.Load()
 
@@ -41,27 +37,6 @@ func main() {
 			next(w, r)
 		}
 	}
-
-	// Sync endpoint - receives clients list from panel
-	mux.HandleFunc("POST /sync", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
-		var req SyncRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "Invalid request", http.StatusBadRequest)
-			return
-		}
-
-		log.Printf("Received sync request with %d clients", len(req.Clients))
-
-		if err := hy2Manager.SyncClients(req.Clients); err != nil {
-			log.Printf("Sync failed: %v", err)
-			http.Error(w, "Sync failed", http.StatusInternalServerError)
-			return
-		}
-
-		log.Printf("Synced %d clients", len(req.Clients))
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
-	}))
 
 	// Export current clients from config
 	mux.HandleFunc("GET /export", authMiddleware(func(w http.ResponseWriter, r *http.Request) {

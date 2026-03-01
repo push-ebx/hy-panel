@@ -6,17 +6,17 @@ import (
 )
 
 type Config struct {
-	Port           string
-	AgentToken     string
-	Hy2ConfigPath  string
+	Port          string
+	AgentToken    string
+	Hy2ConfigPath string
 	Hy2ServiceName string
 }
 
 func Load() (*Config, error) {
 	cfg := &Config{
-		Port:           getEnv("PORT", "8080"),
-		AgentToken:     os.Getenv("AGENT_TOKEN"),
-		Hy2ConfigPath:  getEnv("HY2_CONFIG_PATH", "/etc/hysteria/config.yaml"),
+		Port:          getEnv("PORT", "8080"),
+		AgentToken:    os.Getenv("AGENT_TOKEN"),
+		Hy2ConfigPath: getEnv("HY2_CONFIG_PATH", "/etc/hysteria/config.yaml"),
 		Hy2ServiceName: getEnv("HY2_SERVICE_NAME", "hysteria-server"),
 	}
 
