@@ -9,6 +9,7 @@ const DEFAULTS = {
   chartStepMin: 5,
   liveTrafficIntervalSec: 2,
   trafficSnapshotIntervalMin: 5,
+  copyFeedbackSec: 2,
 } as const;
 
 export interface SettingsState {
@@ -19,6 +20,8 @@ export interface SettingsState {
   chartStepMin: number;
   liveTrafficIntervalSec: number;
   trafficSnapshotIntervalMin: number;
+  copyFeedbackSec: number;
+  setCopyFeedbackSec: (v: number) => void;
   setRefreshTrafficSec: (v: number) => void;
   setOnlineTimeoutSec: (v: number) => void;
   setOnlineTickSec: (v: number) => void;
@@ -38,6 +41,7 @@ export const useSettingsStore = create<SettingsState>()(
       chartStepMin: DEFAULTS.chartStepMin,
       liveTrafficIntervalSec: DEFAULTS.liveTrafficIntervalSec,
       trafficSnapshotIntervalMin: DEFAULTS.trafficSnapshotIntervalMin,
+      copyFeedbackSec: DEFAULTS.copyFeedbackSec,
       setRefreshTrafficSec: (v) => set({ refreshTrafficSec: Math.max(5, Math.min(600, v)) }),
       setOnlineTimeoutSec: (v) => set({ onlineTimeoutSec: Math.max(30, Math.min(600, v)) }),
       setOnlineTickSec: (v) => set({ onlineTickSec: Math.max(5, Math.min(120, v)) }),
@@ -45,6 +49,7 @@ export const useSettingsStore = create<SettingsState>()(
       setChartStepMin: (v) => set({ chartStepMin: Math.max(1, Math.min(60, v)) }),
       setLiveTrafficIntervalSec: (v) => set({ liveTrafficIntervalSec: Math.max(1, Math.min(60, v)) }),
       setTrafficSnapshotIntervalMin: (v) => set({ trafficSnapshotIntervalMin: Math.max(1, Math.min(60, v)) }),
+      setCopyFeedbackSec: (v) => set({ copyFeedbackSec: Math.max(1, Math.min(10, v)) }),
     }),
     { name: "hy2-panel-settings" }
   )
