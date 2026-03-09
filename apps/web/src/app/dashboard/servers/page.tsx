@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import { Plus, RefreshCw, Trash2, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,6 +28,8 @@ import {
 import { useServers, useCreateServer, useDeleteServer, useSyncServers, useCheckServersStatus } from "@/lib/hooks";
 
 export default function ServersPage() {
+  const t = useTranslations("servers");
+  const tCommon = useTranslations("common");
   const { data: servers, isLoading } = useServers();
   const createServer = useCreateServer();
   const deleteServer = useDeleteServer();
@@ -64,11 +67,11 @@ export default function ServersPage() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "online":
-        return <Badge variant="success">Online</Badge>;
+        return <Badge variant="success">{tCommon("online")}</Badge>;
       case "offline":
-        return <Badge variant="secondary">Offline</Badge>;
+        return <Badge variant="secondary">{tCommon("offline")}</Badge>;
       case "error":
-        return <Badge variant="error">Error</Badge>;
+        return <Badge variant="error">{tCommon("error")}</Badge>;
       default:
         return <Badge variant="secondary">{status}</Badge>;
     }
@@ -77,7 +80,7 @@ export default function ServersPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-2xl font-bold md:text-3xl">Servers</h1>
+        <h1 className="text-2xl font-bold md:text-3xl">{t("title")}</h1>
         <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
@@ -85,7 +88,7 @@ export default function ServersPage() {
             disabled={checkStatus.isPending}
           >
             <RefreshCw className={`mr-2 h-4 w-4 ${checkStatus.isPending ? "animate-spin" : ""}`} />
-            Check status
+            {t("checkStatus")}
           </Button>
           <Button
             variant="outline"
@@ -93,27 +96,27 @@ export default function ServersPage() {
             disabled={syncServers.isPending}
           >
             <RefreshCw className={`mr-2 h-4 w-4 ${syncServers.isPending ? "animate-spin" : ""}`} />
-            Sync All
+            {t("syncAll")}
           </Button>
           <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
             <DialogTrigger asChild>
               <Button>
                 <Plus className="mr-2 h-4 w-4" />
-                Add Server
+                {t("addServer")}
               </Button>
             </DialogTrigger>
             <DialogContent>
               {createdToken ? (
                 <>
                   <DialogHeader>
-                    <DialogTitle>Server Created</DialogTitle>
+                    <DialogTitle>{t("serverCreated")}</DialogTitle>
                     <DialogDescription>
-                      Save the agent token. It won&apos;t be shown again.
+                      {t("saveAgentToken")}
                     </DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4">
                     <div className="space-y-2">
-                      <Label>Agent Token</Label>
+                      <Label>{t("agentToken")}</Label>
                       <div className="flex gap-2">
                         <Input value={createdToken} readOnly className="font-mono text-sm" />
                         <Button variant="outline" size="icon" onClick={handleCopyToken}>
@@ -123,20 +126,20 @@ export default function ServersPage() {
                     </div>
                   </div>
                   <DialogFooter>
-                    <Button onClick={handleCloseCreate}>Done</Button>
+                    <Button onClick={handleCloseCreate}>{tCommon("done")}</Button>
                   </DialogFooter>
                 </>
               ) : (
                 <>
                   <DialogHeader>
-                    <DialogTitle>Add Server</DialogTitle>
+                    <DialogTitle>{t("addServer")}</DialogTitle>
                     <DialogDescription>
-                      Add a new Hysteria2 server to manage.
+                      {t("addNewServer")}
                     </DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="name">Name</Label>
+                      <Label htmlFor="name">{t("name")}</Label>
                       <Input
                         id="name"
                         placeholder="Germany 1"
@@ -145,7 +148,7 @@ export default function ServersPage() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="host">Host</Label>
+                      <Label htmlFor="host">{t("host")}</Label>
                       <Input
                         id="host"
                         placeholder="de1.example.com"
@@ -154,7 +157,7 @@ export default function ServersPage() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="agentUrl">Agent URL</Label>
+                      <Label htmlFor="agentUrl">{t("agentUrl")}</Label>
                       <Input
                         id="agentUrl"
                         placeholder="http://123.45.67.89:8080"
@@ -168,7 +171,7 @@ export default function ServersPage() {
                       onClick={handleCreate}
                       disabled={createServer.isPending || !newServer.name || !newServer.host || !newServer.agentUrl}
                     >
-                      {createServer.isPending ? "Creating..." : "Create"}
+                      {createServer.isPending ? t("creating") : t("create")}
                     </Button>
                   </DialogFooter>
                 </>
@@ -182,7 +185,7 @@ export default function ServersPage() {
         <Card className="border-green-500/20 bg-green-500/5">
           <CardContent className="py-3">
             <p className="text-sm text-green-500">
-              Synced {syncServers.data.servers} servers, imported {syncServers.data.clients} clients
+              {t("syncedSuccess", { servers: syncServers.data.servers, clients: syncServers.data.clients })}
             </p>
           </CardContent>
         </Card>
@@ -190,23 +193,23 @@ export default function ServersPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>All Servers</CardTitle>
+          <CardTitle>{t("allServers")}</CardTitle>
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <p className="text-muted-foreground">Loading...</p>
+            <p className="text-muted-foreground">{tCommon("loading")}</p>
           ) : servers?.length === 0 ? (
-            <p className="text-muted-foreground">No servers yet. Add your first server.</p>
+            <p className="text-muted-foreground">{t("noServers")}</p>
           ) : (
             <div className="overflow-x-auto -mx-1">
             <Table className="min-w-[600px]">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Host</TableHead>
-                  <TableHead>Agent URL</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="w-[100px]">Actions</TableHead>
+                  <TableHead>{t("name")}</TableHead>
+                  <TableHead>{t("host")}</TableHead>
+                  <TableHead>{t("agentUrl")}</TableHead>
+                  <TableHead>{t("status")}</TableHead>
+                  <TableHead className="w-[100px]">{t("actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

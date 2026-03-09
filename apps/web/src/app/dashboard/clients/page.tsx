@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo } from "react";
+import { useTranslations } from "next-intl";
 import { Plus, Trash2, Copy, Check, Eye, EyeOff, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,6 +40,8 @@ import {
 } from "recharts";
 
 export default function ClientsPage() {
+  const t = useTranslations("clients");
+  const tCommon = useTranslations("common");
   const { data: clients, isLoading } = useClients();
   const { data: servers } = useServers();
   const refreshTrafficMs = (useSettingsStore((s) => s.refreshTrafficSec) ?? 30) * 1000;
@@ -47,8 +50,9 @@ export default function ClientsPage() {
   const copyFeedbackSec = useSettingsStore((s) => s.copyFeedbackSec) ?? 2;
   const trafficHistoryHours = useSettingsStore((s) => s.trafficHistoryHours) ?? 24;
   const chartStepMin = useSettingsStore((s) => s.chartStepMin) ?? 5;
+  const trafficSnapshotIntervalMin = useSettingsStore((s) => s.trafficSnapshotIntervalMin) ?? 5;
 
-  const { data: trafficData } = useTraffic(refreshTrafficMs);
+  const { data: trafficData } = useTraffic(refreshTrafficMs, trafficSnapshotIntervalMin);
   const traffic = trafficData?.traffic ?? {};
 
   // Online = traffic delta > 0 in last fetch (Hysteria /online API unreliable)
@@ -215,12 +219,12 @@ export default function ClientsPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-2xl font-bold md:text-3xl">Clients</h1>
+        <h1 className="text-2xl font-bold md:text-3xl">{t("title")}</h1>
         <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
           <DialogTrigger asChild>
             <Button>
               <Plus className="mr-2 h-4 w-4" />
-              Add Client
+              {t("addClient")}
             </Button>
           </DialogTrigger>
           <DialogContent>
@@ -250,7 +254,7 @@ export default function ClientsPage() {
             ) : (
               <>
                 <DialogHeader>
-                  <DialogTitle>Add Client</DialogTitle>
+                  <DialogTitle>{t("addClient")}</DialogTitle>
                   <DialogDescription>
                     Create a new client for a server.
                   </DialogDescription>
@@ -315,7 +319,7 @@ export default function ClientsPage() {
           </DialogHeader>
           <div className="h-[300px]">
             {chartData.length === 0 ? (
-              <p className="text-muted-foreground text-sm">No traffic data yet. Data is saved every 5 min when traffic is fetched.</p>
+              <p className="text-muted-foreground text-sm">{t("noTrafficDataYet", { min: trafficSnapshotIntervalMin })}</p>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
@@ -336,17 +340,17 @@ export default function ClientsPage() {
       <Card>
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
           <div>
-            <CardTitle>Clients</CardTitle>
+            <CardTitle>{t("allClients")}</CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
-              {isLoading ? "…" : clients?.length === 0 ? "No clients" : `${clients.length} client${clients.length === 1 ? "" : "s"}${clientsByServer.length > 0 ? ` · ${clientsByServer.length} server${clientsByServer.length === 1 ? "" : "s"}` : ""}`}
+              {isLoading ? "…" : clients?.length === 0 ? t("noClients") : (clients.length === 1 ? t("clientsCount", { count: 1 }) : t("clientsCountPlural", { count: clients.length })) + (clientsByServer.length > 0 ? ` · ${clientsByServer.length === 1 ? t("serversCount", { count: 1 }) : t("serversCountPlural", { count: clientsByServer.length })}` : "")}
             </p>
           </div>
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <p className="text-muted-foreground">Loading...</p>
+            <p className="text-muted-foreground">{tCommon("loading")}</p>
           ) : clients?.length === 0 ? (
-            <p className="text-muted-foreground">No clients yet. Sync servers or add a client manually.</p>
+            <p className="text-muted-foreground">{t("noClientsHint")}</p>
           ) : (
             <div className="space-y-6">
               {clientsByServer.map(({ serverId, name, clients: groupClients }) => (

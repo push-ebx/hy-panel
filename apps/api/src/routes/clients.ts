@@ -1,8 +1,8 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
-import { eq, desc, lt, and, gte } from "drizzle-orm";
-import { getDb, clients, servers, trafficSnapshots } from "@hy2-panel/db";
+import { eq, desc, lt, gte } from "drizzle-orm";
+import { getDb, clients, servers, trafficSnapshots, liveTrafficSnapshots, liveTrafficState, streamSnapshots } from "@hy2-panel/db";
 import { authMiddleware, type JwtPayload } from "../middleware/auth";
 import { ApiError } from "../middleware/error-handler";
 import type { ApiResponse } from "@hy2-panel/shared";
@@ -92,6 +92,7 @@ clientsRoutes.get("/online", async (c) => {
 
 // GET /traffic — aggregate traffic from agents and persist totals (survives Hysteria restart)
 clientsRoutes.get("/traffic", async (c) => {
+  const snapshotIntervalMin = Math.max(1, Math.min(60, parseInt(c.req.query("snapshotInterval") ?? "5", 10) || 5));
   const db = await getDb();
   const allServers = await db.query.servers.findMany();
   const allClients = await db.query.clients.findMany();
@@ -149,9 +150,9 @@ clientsRoutes.get("/traffic", async (c) => {
     traffic[client.id] = { tx: totalTx, rx: totalRx };
   }
 
-  // Save snapshots (throttled: at most once per 5 min per client), keep last 7 days
+  // Save snapshots (throttled: at most once per N min per client), keep last 7 days
   try {
-    const SNAPSHOT_INTERVAL_MS = 5 * 60 * 1000;
+    const SNAPSHOT_INTERVAL_MS = snapshotIntervalMin * 60 * 1000;
     const RETENTION_DAYS = 7;
     const cutoff = new Date(now.getTime() - RETENTION_DAYS * 24 * 60 * 60 * 1000);
 
@@ -211,6 +212,7 @@ clientsRoutes.get("/streams", async (c) => {
     reqAddr: string;
     tx: number;
     rx: number;
+    initialAt: string;
     lastActiveAt: string;
   }> = [];
 
@@ -239,6 +241,7 @@ clientsRoutes.get("/streams", async (c) => {
           reqAddr: s.req_addr,
           tx: s.tx ?? 0,
           rx: s.rx ?? 0,
+          initialAt: s.initial_at ?? "",
           lastActiveAt: s.last_active_at,
         });
       }
@@ -247,9 +250,87 @@ clientsRoutes.get("/streams", async (c) => {
     }
   }
 
+  // Persist live traffic and streams (last 24h)
+  const now = new Date();
+  const retentionCutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const totalTx = streams.reduce((sum, s) => sum + s.tx, 0);
+  const totalRx = streams.reduce((sum, s) => sum + s.rx, 0);
+
+  try {
+    const stateRow = await db.query.liveTrafficState.findFirst({ where: eq(liveTrafficState.id, "default") });
+    const prevTx = stateRow?.lastTotalTx ?? 0;
+    const prevRx = stateRow?.lastTotalRx ?? 0;
+    const prevTs = stateRow?.lastSampledAt?.getTime() ?? 0;
+    const dtSec = prevTs > 0 ? (now.getTime() - prevTs) / 1000 : 0;
+
+    if (dtSec > 0) {
+      const upBytesPerSec = Math.max(0, (totalTx - prevTx) / dtSec);
+      const downBytesPerSec = Math.max(0, (totalRx - prevRx) / dtSec);
+      await db.insert(liveTrafficSnapshots).values({
+        id: crypto.randomUUID(),
+        upBytesPerSec: Math.round(upBytesPerSec),
+        downBytesPerSec: Math.round(downBytesPerSec),
+        sampledAt: now,
+      });
+    }
+
+    if (stateRow) {
+      await db.update(liveTrafficState).set({ lastTotalTx: totalTx, lastTotalRx: totalRx, lastSampledAt: now }).where(eq(liveTrafficState.id, "default"));
+    } else {
+      await db.insert(liveTrafficState).values({ id: "default", lastTotalTx: totalTx, lastTotalRx: totalRx, lastSampledAt: now });
+    }
+
+    await db.delete(liveTrafficSnapshots).where(lt(liveTrafficSnapshots.sampledAt, retentionCutoff));
+
+    // Stream snapshots: every 30 sec to reduce DB size
+    const lastStream = await db.query.streamSnapshots.findFirst({ orderBy: desc(streamSnapshots.sampledAt) });
+    const lastStreamAt = lastStream?.sampledAt?.getTime() ?? 0;
+    if (now.getTime() - lastStreamAt >= 30_000) {
+      for (const s of streams) {
+        await db.insert(streamSnapshots).values({
+          id: crypto.randomUUID(),
+          serverId: s.serverId,
+          serverName: s.serverName,
+          auth: s.clientName ?? "unknown",
+          reqAddr: s.reqAddr.substring(0, 512),
+          tx: s.tx,
+          rx: s.rx,
+          initialAt: s.initialAt || null,
+          lastActiveAt: s.lastActiveAt || null,
+          sampledAt: now,
+        });
+      }
+      await db.delete(streamSnapshots).where(lt(streamSnapshots.sampledAt, retentionCutoff));
+    }
+  } catch (err) {
+    console.error("Failed to persist live traffic/streams:", err);
+  }
+
   return c.json<ApiResponse>({
     success: true,
     data: { streams },
+  });
+});
+
+// GET /live-traffic-history — last 24h for chart (max 1000 points)
+clientsRoutes.get("/live-traffic-history", async (c) => {
+  const db = await getDb();
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const rows = await db
+    .select()
+    .from(liveTrafficSnapshots)
+    .where(gte(liveTrafficSnapshots.sampledAt, cutoff))
+    .orderBy(liveTrafficSnapshots.sampledAt)
+    .limit(1000);
+  const data = rows.map((r) => ({
+    time: r.sampledAt.toLocaleTimeString(undefined, { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+    up: r.upBytesPerSec / 1024,
+    down: r.downBytesPerSec / 1024,
+    sampledAt: r.sampledAt.toISOString(),
+  }));
+  return c.json<ApiResponse>({
+    success: true,
+    data,
   });
 });
 

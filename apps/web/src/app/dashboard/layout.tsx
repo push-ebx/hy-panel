@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { Sidebar } from "@/components/sidebar";
 import { useAuthStore } from "@/store/auth";
 import { Button } from "@/components/ui/button";
@@ -33,10 +34,13 @@ export default function DashboardLayout({
     checkAuth();
   }, [ready, token, router, checkAuth]);
 
+  const t = useTranslations("common");
+  const tNav = useTranslations("nav");
+
   if (!ready || !token) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
-        <p className="text-muted-foreground">Loading...</p>
+        <p className="text-muted-foreground">{t("loading")}</p>
       </div>
     );
   }
@@ -49,7 +53,7 @@ export default function DashboardLayout({
           <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(true)} aria-label="Open menu">
             <Menu className="h-5 w-5" />
           </Button>
-          <span className="font-semibold">Hy2 Panel</span>
+          <span className="font-semibold">{tNav("appName")}</span>
         </header>
         <main className="flex-1 overflow-auto p-4 md:p-6">{children}</main>
       </div>

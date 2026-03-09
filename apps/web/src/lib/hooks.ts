@@ -117,10 +117,14 @@ export function useOnlineClients(refetchInterval = 1500) {
   });
 }
 
-export function useTraffic(refetchInterval = 30000) {
+export function useTraffic(refetchInterval = 30000, snapshotIntervalMin?: number) {
+  const url =
+    snapshotIntervalMin != null
+      ? `/api/clients/traffic?snapshotInterval=${snapshotIntervalMin}`
+      : "/api/clients/traffic";
   return useQuery({
-    queryKey: ["clients", "traffic"],
-    queryFn: () => api.get<{ traffic: Record<string, { tx: number; rx: number }> }>("/api/clients/traffic"),
+    queryKey: ["clients", "traffic", snapshotIntervalMin],
+    queryFn: () => api.get<{ traffic: Record<string, { tx: number; rx: number }> }>(url),
     refetchInterval,
   });
 }
@@ -135,6 +139,7 @@ export type LiveStream = {
   reqAddr: string;
   tx: number;
   rx: number;
+  initialAt: string;
   lastActiveAt: string;
 };
 
@@ -143,6 +148,15 @@ export function useLiveStreams(refetchIntervalMs = 2000) {
     queryKey: ["clients", "streams"],
     queryFn: () => api.get<{ streams: LiveStream[] }>("/api/clients/streams"),
     refetchInterval: refetchIntervalMs,
+  });
+}
+
+export type LiveTrafficHistoryPoint = { time: string; up: number; down: number; sampledAt?: string };
+
+export function useLiveTrafficHistory() {
+  return useQuery({
+    queryKey: ["clients", "live-traffic-history"],
+    queryFn: () => api.get<LiveTrafficHistoryPoint[]>("/api/clients/live-traffic-history"),
   });
 }
 

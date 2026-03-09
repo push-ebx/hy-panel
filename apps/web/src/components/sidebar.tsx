@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth";
 import { Button } from "@/components/ui/button";
@@ -14,13 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
-
-const navItems = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/dashboard/servers", label: "Servers", icon: Server },
-  { href: "/dashboard/clients", label: "Clients", icon: Users },
-  { href: "/dashboard/settings", label: "Settings", icon: Settings },
-];
+import { LocaleSwitcher } from "@/components/locale-switcher";
 
 interface SidebarProps {
   open?: boolean;
@@ -30,11 +25,19 @@ interface SidebarProps {
 export function Sidebar({ open = true, onClose }: SidebarProps) {
   const pathname = usePathname();
   const { user, logout } = useAuthStore();
+  const t = useTranslations("nav");
+
+  const navItems = [
+    { href: "/dashboard", label: t("dashboard"), icon: LayoutDashboard },
+    { href: "/dashboard/servers", label: t("servers"), icon: Server },
+    { href: "/dashboard/clients", label: t("clients"), icon: Users },
+    { href: "/dashboard/settings", label: t("settings"), icon: Settings },
+  ];
 
   const content = (
     <>
       <div className="flex items-center justify-between p-4 md:p-6">
-        <h1 className="text-xl font-bold">Hy2 Panel</h1>
+        <h1 className="text-xl font-bold">{t("appName")}</h1>
         <div className="flex items-center gap-2">
           <ThemeToggle />
           {onClose && (
@@ -80,7 +83,7 @@ export function Sidebar({ open = true, onClose }: SidebarProps) {
           }}
         >
           <LogOut className="mr-2 h-4 w-4 shrink-0" />
-          Logout
+          {t("logout")}
         </Button>
       </div>
     </>

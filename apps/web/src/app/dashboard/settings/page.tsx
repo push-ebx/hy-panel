@@ -1,39 +1,47 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuthStore } from "@/store/auth";
 import { useSettingsStore } from "@/store/settings";
+import { LocaleSwitcher } from "@/components/locale-switcher";
 
 export default function SettingsPage() {
+  const t = useTranslations("settings");
+  const tAuth = useTranslations("auth");
   const { user } = useAuthStore();
   const refreshTrafficSec = useSettingsStore((s) => s.refreshTrafficSec);
   const onlineTimeoutSec = useSettingsStore((s) => s.onlineTimeoutSec);
   const onlineTickSec = useSettingsStore((s) => s.onlineTickSec);
   const trafficHistoryHours = useSettingsStore((s) => s.trafficHistoryHours);
   const chartStepMin = useSettingsStore((s) => s.chartStepMin);
+  const liveTrafficIntervalSec = useSettingsStore((s) => s.liveTrafficIntervalSec);
+  const trafficSnapshotIntervalMin = useSettingsStore((s) => s.trafficSnapshotIntervalMin);
   const setRefreshTrafficSec = useSettingsStore((s) => s.setRefreshTrafficSec);
   const setOnlineTimeoutSec = useSettingsStore((s) => s.setOnlineTimeoutSec);
   const setOnlineTickSec = useSettingsStore((s) => s.setOnlineTickSec);
   const setTrafficHistoryHours = useSettingsStore((s) => s.setTrafficHistoryHours);
   const setChartStepMin = useSettingsStore((s) => s.setChartStepMin);
+  const setLiveTrafficIntervalSec = useSettingsStore((s) => s.setLiveTrafficIntervalSec);
+  const setTrafficSnapshotIntervalMin = useSettingsStore((s) => s.setTrafficSnapshotIntervalMin);
 
   const num = (v: string) => parseInt(v, 10) || 0;
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold md:text-3xl">Settings</h1>
+      <h1 className="text-2xl font-bold md:text-3xl">{t("title")}</h1>
 
       <Card>
         <CardHeader>
-          <CardTitle>Timings</CardTitle>
-          <CardDescription>Intervals and timeouts used across the panel</CardDescription>
+          <CardTitle>{t("timings")}</CardTitle>
+          <CardDescription>{t("timingsDesc")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="refreshTraffic">Traffic refresh (sec)</Label>
+            <Label htmlFor="refreshTraffic">{t("trafficRefresh")}</Label>
             <Input
               id="refreshTraffic"
               type="number"
@@ -42,10 +50,10 @@ export default function SettingsPage() {
               value={refreshTrafficSec}
               onChange={(e) => setRefreshTrafficSec(num(e.target.value) || 30)}
             />
-            <p className="text-xs text-muted-foreground">5–600. How often to fetch tx/rx from agents. Traffic column, dashboard, charts.</p>
+            <p className="text-xs text-muted-foreground">{t("trafficRefreshHint")}</p>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="onlineTimeout">Online timeout (sec)</Label>
+            <Label htmlFor="onlineTimeout">{t("onlineTimeout")}</Label>
             <Input
               id="onlineTimeout"
               type="number"
@@ -54,10 +62,10 @@ export default function SettingsPage() {
               value={onlineTimeoutSec}
               onChange={(e) => setOnlineTimeoutSec(num(e.target.value) || 90)}
             />
-            <p className="text-xs text-muted-foreground">30–600. After no traffic growth, show client as offline.</p>
+            <p className="text-xs text-muted-foreground">{t("onlineTimeoutHint")}</p>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="onlineTick">Online tick (sec)</Label>
+            <Label htmlFor="onlineTick">{t("onlineTick")}</Label>
             <Input
               id="onlineTick"
               type="number"
@@ -66,10 +74,34 @@ export default function SettingsPage() {
               value={onlineTickSec}
               onChange={(e) => setOnlineTickSec(num(e.target.value) || 10)}
             />
-            <p className="text-xs text-muted-foreground">5–120. How often to recalc online list from last-seen.</p>
+            <p className="text-xs text-muted-foreground">{t("onlineTickHint")}</p>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="trafficHistory">Traffic chart period (hours)</Label>
+            <Label htmlFor="liveTrafficInterval">{t("liveTrafficInterval")}</Label>
+            <Input
+              id="liveTrafficInterval"
+              type="number"
+              min={1}
+              max={60}
+              value={liveTrafficIntervalSec}
+              onChange={(e) => setLiveTrafficIntervalSec(num(e.target.value) || 2)}
+            />
+            <p className="text-xs text-muted-foreground">{t("liveTrafficIntervalHint")}</p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="trafficSnapshotInterval">{t("trafficSnapshotInterval")}</Label>
+            <Input
+              id="trafficSnapshotInterval"
+              type="number"
+              min={1}
+              max={60}
+              value={trafficSnapshotIntervalMin}
+              onChange={(e) => setTrafficSnapshotIntervalMin(num(e.target.value) || 5)}
+            />
+            <p className="text-xs text-muted-foreground">{t("trafficSnapshotIntervalHint")}</p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="trafficHistory">{t("trafficHistory")}</Label>
             <Input
               id="trafficHistory"
               type="number"
@@ -78,10 +110,10 @@ export default function SettingsPage() {
               value={trafficHistoryHours}
               onChange={(e) => setTrafficHistoryHours(num(e.target.value) || 24)}
             />
-            <p className="text-xs text-muted-foreground">1–168. Time range for the traffic history chart in client detail.</p>
+            <p className="text-xs text-muted-foreground">{t("trafficHistoryHint")}</p>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="chartStep">Traffic chart X step (min)</Label>
+            <Label htmlFor="chartStep">{t("chartStep")}</Label>
             <Input
               id="chartStep"
               type="number"
@@ -90,23 +122,33 @@ export default function SettingsPage() {
               value={chartStepMin}
               onChange={(e) => setChartStepMin(num(e.target.value) || 5)}
             />
-            <p className="text-xs text-muted-foreground">1–60. Interval between points on the chart X axis (data is downsampled to this step).</p>
+            <p className="text-xs text-muted-foreground">{t("chartStepHint")}</p>
           </div>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Account</CardTitle>
-          <CardDescription>Your account information</CardDescription>
+          <CardTitle>{t("language")}</CardTitle>
+          <CardDescription>{t("languageDesc")}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <LocaleSwitcher />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("account")}</CardTitle>
+          <CardDescription>{t("accountDesc")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label>Email</Label>
+            <Label>{tAuth("email")}</Label>
             <Input value={user?.email ?? ""} disabled />
           </div>
           <div className="space-y-2">
-            <Label>Username</Label>
+            <Label>{tAuth("username")}</Label>
             <Input value={user?.username ?? ""} disabled />
           </div>
         </CardContent>
@@ -114,12 +156,12 @@ export default function SettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>API</CardTitle>
-          <CardDescription>API configuration</CardDescription>
+          <CardTitle>{t("api")}</CardTitle>
+          <CardDescription>{t("apiDesc")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label>API URL</Label>
+            <Label>{t("apiUrl")}</Label>
             <Input value={process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000"} disabled />
           </div>
         </CardContent>
@@ -127,12 +169,12 @@ export default function SettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Danger Zone</CardTitle>
-          <CardDescription>Irreversible actions</CardDescription>
+          <CardTitle>{t("dangerZone")}</CardTitle>
+          <CardDescription>{t("dangerZoneDesc")}</CardDescription>
         </CardHeader>
         <CardContent>
           <Button variant="destructive" disabled>
-            Delete Account
+            {t("deleteAccount")}
           </Button>
         </CardContent>
       </Card>

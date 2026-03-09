@@ -2,15 +2,18 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuthStore } from "@/store/auth";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { LocaleSwitcher } from "@/components/locale-switcher";
 
 export default function LoginPage() {
   const router = useRouter();
+  const t = useTranslations("auth");
   const login = useAuthStore((state) => state.login);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -26,7 +29,7 @@ export default function LoginPage() {
       await login(email, password);
       router.push("/dashboard");
     } catch (err) {
-      setError("Invalid credentials");
+      setError(t("invalidCredentials"));
     } finally {
       setLoading(false);
     }
@@ -34,17 +37,18 @@ export default function LoginPage() {
 
   return (
     <div className="relative flex min-h-screen items-center justify-center px-4">
-      <div className="absolute right-4 top-4">
+      <div className="absolute right-4 top-4 flex items-center gap-2">
+        <LocaleSwitcher />
         <ThemeToggle />
       </div>
       <Card className="w-full max-w-md mx-auto">
         <CardHeader>
-          <CardTitle className="text-2xl text-center">Hysteria2 Panel</CardTitle>
+          <CardTitle className="text-2xl text-center">{t("title")}</CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">{t("email")}</Label>
               <Input
                 id="email"
                 type="email"
@@ -54,7 +58,7 @@ export default function LoginPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password">{t("password")}</Label>
               <Input
                 id="password"
                 type="password"
@@ -65,7 +69,7 @@ export default function LoginPage() {
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "Signing in..." : "Sign in"}
+              {loading ? t("signingIn") : t("signIn")}
             </Button>
           </form>
         </CardContent>
