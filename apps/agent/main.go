@@ -165,6 +165,44 @@ func main() {
 		io.Copy(w, resp.Body)
 	}))
 
+	// Live streams from Hysteria2 Traffic Stats API (GET /dump/streams)
+	mux.HandleFunc("GET /streams", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		if cfg.Hy2ApiUrl == "" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{"streams": []interface{}{}})
+			return
+		}
+
+		req, err := http.NewRequest(http.MethodGet, cfg.Hy2ApiUrl+"/dump/streams", nil)
+		if err != nil {
+			http.Error(w, "Failed to build request", http.StatusInternalServerError)
+			return
+		}
+		if cfg.Hy2ApiSecret != "" {
+			req.Header.Set("Authorization", cfg.Hy2ApiSecret)
+		}
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			log.Printf("Hy2 API /dump/streams request failed: %v", err)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{"streams": []interface{}{}})
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			log.Printf("Hy2 API /dump/streams returned %d: %s", resp.StatusCode, string(body))
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{"streams": []interface{}{}})
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		io.Copy(w, resp.Body)
+	}))
+
 	// Delete client from config (remove from auth.userpass)
 	mux.HandleFunc("DELETE /clients/{id}", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")

@@ -1,12 +1,13 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Server, Users, Activity, RefreshCw, Cpu, HardDrive, MemoryStick } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useDashboardStats, useSyncServers, useTraffic, useOnlineClients, useServerSystemStats } from "@/lib/hooks";
+import { useDashboardStats, useSyncServers, useTraffic, useOnlineClients, useServerSystemStats, useLiveStreams } from "@/lib/hooks";
 import { useSettingsStore } from "@/store/settings";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 
 function formatBytes(bytes: number) {
   if (bytes === 0) return "0 B";
@@ -57,6 +58,38 @@ export default function DashboardPage() {
 
   const refreshSystemMs = (useSettingsStore((s) => s.refreshTrafficSec) ?? 30) * 1000;
   const { data: systemStats = [] } = useServerSystemStats(refreshSystemMs);
+
+  // Live traffic from /clients/streams
+  const liveIntervalMs = 2000;
+  const { data: liveData } = useLiveStreams(liveIntervalMs);
+  const [liveHistory, setLiveHistory] = useState<Array<{ time: string; up: number; down: number }>>([]);
+  const livePrevRef = useRef<{ tx: number; rx: number; ts: number } | null>(null);
+
+  useEffect(() => {
+    if (!liveData?.streams) return;
+    const totalTx = liveData.streams.reduce((sum, s) => sum + (s.tx ?? 0), 0);
+    const totalRx = liveData.streams.reduce((sum, s) => sum + (s.rx ?? 0), 0);
+    const now = Date.now();
+
+    if (livePrevRef.current) {
+      const dt = (now - livePrevRef.current.ts) / 1000;
+      if (dt > 0) {
+        const upBytesPerSec = Math.max(0, (totalTx - livePrevRef.current.tx) / dt);
+        const downBytesPerSec = Math.max(0, (totalRx - livePrevRef.current.rx) / dt);
+        const point = {
+          time: new Date().toLocaleTimeString(undefined, { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+          up: upBytesPerSec / 1024, // KB/s
+          down: downBytesPerSec / 1024,
+        };
+        setLiveHistory((prev) => {
+          const next = [...prev, point];
+          return next.slice(-60);
+        });
+      }
+    }
+
+    livePrevRef.current = { tx: totalTx, rx: totalRx, ts: now };
+  }, [liveData]);
 
   return (
     <div className="space-y-6">
@@ -132,6 +165,32 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {liveHistory.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Live traffic</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[240px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={liveHistory} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis dataKey="time" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} unit=" KB/s" />
+                  <Tooltip
+                    formatter={(value: number) => [`${value.toFixed(1)} KB/s`, ""]}
+                    contentStyle={{ fontSize: 12 }}
+                  />
+                  <Legend />
+                  <Line type="monotone" dataKey="up" name="Upload" stroke="hsl(var(--primary))" dot={false} strokeWidth={1.8} />
+                  <Line type="monotone" dataKey="down" name="Download" stroke="#22c55e" dot={false} strokeWidth={1.8} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {systemStats.length > 0 && (
         <div className="space-y-6">

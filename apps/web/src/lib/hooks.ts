@@ -125,6 +125,27 @@ export function useTraffic(refetchInterval = 30000) {
   });
 }
 
+export type LiveStream = {
+  serverId: string;
+  serverName: string;
+  clientId: string | null;
+  clientName: string | null;
+  state: string;
+  stream: number;
+  reqAddr: string;
+  tx: number;
+  rx: number;
+  lastActiveAt: string;
+};
+
+export function useLiveStreams(refetchIntervalMs = 2000) {
+  return useQuery({
+    queryKey: ["clients", "streams"],
+    queryFn: () => api.get<{ streams: LiveStream[] }>("/api/clients/streams"),
+    refetchInterval: refetchIntervalMs,
+  });
+}
+
 export function useClientTrafficHistory(clientId: string | null, periodHours = 24) {
   return useQuery({
     queryKey: ["clients", clientId, "traffic-history", periodHours],

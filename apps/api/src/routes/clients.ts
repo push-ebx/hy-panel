@@ -182,6 +182,77 @@ clientsRoutes.get("/traffic", async (c) => {
   });
 });
 
+// GET /streams — live streams from agents' /streams (proxy for Hysteria /dump/streams)
+clientsRoutes.get("/streams", async (c) => {
+  const db = await getDb();
+  const allServers = await db.query.servers.findMany();
+  const allClients = await db.query.clients.findMany();
+
+  type UpstreamStream = {
+    state: string;
+    auth: string;
+    connection: number;
+    stream: number;
+    req_addr: string;
+    hooked_req_addr: string;
+    tx: number;
+    rx: number;
+    initial_at: string;
+    last_active_at: string;
+  };
+
+  const streams: Array<{
+    serverId: string;
+    serverName: string;
+    clientId: string | null;
+    clientName: string | null;
+    state: string;
+    stream: number;
+    reqAddr: string;
+    tx: number;
+    rx: number;
+    lastActiveAt: string;
+  }> = [];
+
+  for (const server of allServers) {
+    let agentUrl = server.agentUrl;
+    if (!agentUrl.startsWith("http://") && !agentUrl.startsWith("https://")) {
+      agentUrl = `http://${agentUrl}`;
+    }
+    try {
+      const res = await fetch(`${agentUrl.replace(/\/$/, "")}/streams`, {
+        headers: { Authorization: `Bearer ${server.agentToken}` },
+      });
+      if (!res.ok) continue;
+      const data = (await res.json()) as { streams?: UpstreamStream[] };
+      for (const s of data.streams ?? []) {
+        const client = allClients.find(
+          (cl) => cl.serverId === server.id && cl.name.toLowerCase() === (s.auth ?? "").toLowerCase()
+        );
+        streams.push({
+          serverId: server.id,
+          serverName: server.name,
+          clientId: client?.id ?? null,
+          clientName: client?.name ?? (s.auth || null),
+          state: s.state,
+          stream: s.stream,
+          reqAddr: s.req_addr,
+          tx: s.tx ?? 0,
+          rx: s.rx ?? 0,
+          lastActiveAt: s.last_active_at,
+        });
+      }
+    } catch {
+      // skip server on error
+    }
+  }
+
+  return c.json<ApiResponse>({
+    success: true,
+    data: { streams },
+  });
+});
+
 clientsRoutes.get("/", async (c) => {
   const db = await getDb();
   const allClients = await db.query.clients.findMany();

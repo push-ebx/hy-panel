@@ -22,32 +22,32 @@ services:
     depends_on:
       - mysql
 
-  api:
-    build:
-      context: ./apps/api
-      dockerfile: Dockerfile
-    container_name: hy2-api
-    environment:
-      DATABASE_URL: mysql://root:password@mysql:3306/hy2_panel
-      JWT_SECRET: your-super-secret-jwt-key
-      CORS_ORIGIN: http://localhost:3000
-      PORT: 4000
-    ports:
-      - "4000:4000"
-    depends_on:
-      - mysql
-
-  web:
-    build:
-      context: ./apps/web
-      dockerfile: Dockerfile
-    container_name: hy2-web
-    environment:
-      NEXT_PUBLIC_API_URL: http://localhost:4000
-    ports:
-      - "3000:3000"
-    depends_on:
-      - api
+#  api:
+#    build:
+#      context: ./apps/api
+#      dockerfile: Dockerfile
+#    container_name: hy2-api
+#    environment:
+#      DATABASE_URL: mysql://root:password@mysql:3306/hy2_panel
+#      JWT_SECRET: your-super-secret-jwt-key
+#      CORS_ORIGIN: http://localhost:3000
+#      PORT: 4000
+#    ports:
+#      - "4000:4000"
+#    depends_on:
+#      - mysql
+#
+#  web:
+#    build:
+#      context: ./apps/web
+#      dockerfile: Dockerfile
+#    container_name: hy2-web
+#    environment:
+#      NEXT_PUBLIC_API_URL: http://localhost:4000
+#    ports:
+#      - "3000:3000"
+#    depends_on:
+#      - api
 
 volumes:
   mysql_data:
