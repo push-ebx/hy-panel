@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
-import { eq, desc, lt, gte } from "drizzle-orm";
+import { and, eq, desc, lt, gte } from "drizzle-orm";
 import { getDb, clients, servers, trafficSnapshots, liveTrafficSnapshots, liveTrafficState, streamSnapshots } from "@hy2-panel/db";
 import { authMiddleware, type JwtPayload } from "../middleware/auth";
 import { ApiError } from "../middleware/error-handler";
